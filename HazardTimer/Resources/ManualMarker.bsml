@@ -1,0 +1,38 @@
+<vertical spacing="1" horizontal-fit="PreferredSize"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="https://monkeymanboy.github.io/BSML-Docs/ https://raw.githubusercontent.com/monkeymanboy/BSML-Docs/gh-pages/BSMLSchema.xsd">
+
+  <text id='status-text' text='' font-size='3.2' align='Center'/>
+
+  <slider-setting
+    text='Minutes'
+    value='minutes'
+    integer-only='true'
+    min='0'
+    max='20'
+    increment='1'
+    show-buttons='true'
+    apply-on-change='true'
+    bind-value='true'/>
+
+  <slider-setting
+    text='Seconds'
+    value='seconds'
+    integer-only='true'
+    min='0'
+    max='59'
+    increment='1'
+    show-buttons='true'
+    apply-on-change='true'
+    bind-value='true'/>
+
+  <horizontal spacing='1'>
+    <button text='Add' on-click='add-marker' hover-hint='選択中の譜面に手動マーカーを追加する'/>
+    <button text='Clear Manual' on-click='clear-manual' hover-hint='手動マーカーだけ消す'/>
+  </horizontal>
+  <horizontal spacing='1'>
+    <button text='Import Replays' on-click='import-replays'
+            hover-hint='この譜面の過去のリプレイ（ローカル保存）から壁への接触地点を取り込む。通信は行わない'/>
+    <button text='Clear All' on-click='clear-all' hover-hint='この譜面の記録をすべて消す'/>
+  </horizontal>
+</vertical>
