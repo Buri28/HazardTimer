@@ -1,10 +1,10 @@
-<vertical spacing="1" horizontal-fit="PreferredSize"
+﻿<vertical spacing="1" horizontal-fit="PreferredSize"
   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
   xsi:schemaLocation="https://monkeymanboy.github.io/BSML-Docs/ https://raw.githubusercontent.com/monkeymanboy/BSML-Docs/gh-pages/BSMLSchema.xsd">
 
   <slider-setting
     text='Lead Time'
-    hover-hint='何秒前からカウントダウンを表示するか'
+    hover-hint='How many seconds ahead the countdown starts.'
     value='lead-time'
     min='1'
     max='30'
@@ -16,7 +16,7 @@
 
   <slider-setting
     text='Cluster Threshold'
-    hover-hint='この秒数未満で続く壁への接触は、1つの危険地点にまとめる'
+    hover-hint='Wall hits closer together than this are merged into one hazard.'
     value='cluster-threshold'
     min='0.5'
     max='15'
@@ -28,28 +28,28 @@
 
   <toggle-setting
     text='Record Wall Hits'
-    hover-hint='壁に当たった地点を記録する'
+    hover-hint='Record where you hit walls.'
     value='record-wall-hits'
     apply-on-change='true'
     bind-value='true'/>
 
   <toggle-setting
     text='Record Fails'
-    hover-hint='フェイルした地点を記録する（NoFail 中は記録しない）'
+    hover-hint='Record where you failed. With NoFail, the fail point is simulated.'
     value='record-fails'
     apply-on-change='true'
     bind-value='true'/>
 
   <toggle-setting
     text='Show Fail Marker'
-    hover-hint='フェイル地点のカウントダウンを他と併記する'
+    hover-hint='Show the fail countdown alongside the other markers.'
     value='show-fail-marker'
     apply-on-change='true'
     bind-value='true'/>
 
   <toggle-setting
     text='Auto Import Replays'
-    hover-hint='曲を選んだとき、その譜面の過去のリプレイから自動で取り込む（通信は行わない）'
+    hover-hint='Import from your local replays when a beatmap is selected. No network access.'
     value='auto-import-replays'
     apply-on-change='true'
     bind-value='true'/>
@@ -76,3 +76,4 @@
     apply-on-change='true'
     bind-value='true'/>
 </vertical>
+

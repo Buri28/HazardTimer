@@ -11,10 +11,14 @@ namespace HazardTimer.Services
         /// <summary>到達までの残り「実時間」秒。</summary>
         public readonly float RemainingSeconds;
 
-        public CountdownEntry(MarkerSource source, float remainingSeconds)
+        /// <summary>マーカーに付けられた表示名。</summary>
+        public readonly string Label;
+
+        public CountdownEntry(MarkerSource source, float remainingSeconds, string label)
         {
             Source = source;
             RemainingSeconds = remainingSeconds;
+            Label = label;
         }
     }
 
@@ -83,7 +87,9 @@ namespace HazardTimer.Services
             => ToRealSeconds(marker.SongTime - songTime) <= leadTime;
 
         private CountdownEntry ToEntry(HazardMarker marker, float songTime)
-            => new CountdownEntry(marker.Source, ToRealSeconds(marker.SongTime - songTime));
+            => new CountdownEntry(marker.Source,
+                                  ToRealSeconds(marker.SongTime - songTime),
+                                  marker.DisplayLabel);
 
         /// <summary>
         /// 譜面時間の差を実時間の秒に直す。スピード系モディファイアや練習モードの

@@ -88,17 +88,10 @@ namespace HazardTimer.UI
 
         private static void AppendLine(StringBuilder sb, CountdownEntry entry)
         {
-            sb.Append(LabelFor(entry.Source));
+            sb.Append(entry.Label);
             sb.Append(' ');
             sb.Append(Mathf.Max(entry.RemainingSeconds, 0f).ToString("F1"));
         }
-
-        private static string LabelFor(MarkerSource source) => source switch
-        {
-            MarkerSource.Fail => "FAIL",
-            MarkerSource.Manual => "MARK",
-            _ => "WALL",
-        };
 
         private static Color ColorFor(float remainingSeconds, bool failOnly)
         {

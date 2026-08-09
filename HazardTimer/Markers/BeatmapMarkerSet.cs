@@ -127,7 +127,7 @@ namespace HazardTimer.Markers
         /// 手動マーカーを追加する。ほぼ同じ時刻に既にあれば何もしない。
         /// 手動指定は意図的な操作なので、壁のようなクラスタ統合は行わない。
         /// </summary>
-        public bool AddManual(float songTime)
+        public bool AddManual(float songTime, string? label = null)
         {
             if (songTime < 0f) return false;
             if (markers.Any(m => m.Source == MarkerSource.Manual
@@ -135,7 +135,10 @@ namespace HazardTimer.Markers
             {
                 return false;
             }
-            Insert(new HazardMarker(songTime, MarkerSource.Manual));
+            Insert(new HazardMarker(songTime, MarkerSource.Manual)
+            {
+                Label = string.IsNullOrWhiteSpace(label) ? null : label!.Trim(),
+            });
             return true;
         }
 

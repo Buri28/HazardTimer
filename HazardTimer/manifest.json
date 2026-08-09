@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/beat-saber-modding-group/BSIPA-MetadataFileSchema/master/schema.json",
   "author": "Buri28",
-  "description": "譜面中の危険地点（壁に当たった場所・フェイルした場所・手動で指定した時刻）までの残り秒数をカウントダウン表示するMOD",
+  "description": "Counts down the seconds until the next hazard in a map - walls you have hit, where you failed, and points you mark yourself.",
   "gameVersion": "1.40.8",
   "id": "HazardTimer",
   "name": "HazardTimer",

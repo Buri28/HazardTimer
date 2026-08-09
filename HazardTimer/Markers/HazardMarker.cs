@@ -36,6 +36,28 @@ namespace HazardTimer.Markers
         [JsonProperty("imported")]
         public bool Imported { get; set; }
 
+        /// <summary>
+        /// 表示に使う名前。空なら種別から決まる既定の文字列（WALL / FAIL / MARK）を使う。
+        /// </summary>
+        /// <remarks>
+        /// カウンターは TextMeshPro の既定フォントで描くため、日本語などの
+        /// グリフを持たない文字は豆腐になる。英数字を推奨。
+        /// </remarks>
+        [JsonProperty("label")]
+        public string? Label { get; set; }
+
+        /// <summary>実際に表示される文字列。</summary>
+        [JsonIgnore]
+        public string DisplayLabel =>
+            string.IsNullOrWhiteSpace(Label) ? DefaultLabelFor(Source) : Label!;
+
+        public static string DefaultLabelFor(MarkerSource source) => source switch
+        {
+            MarkerSource.Fail => "FAIL",
+            MarkerSource.Manual => "MARK",
+            _ => "WALL",
+        };
+
         public HazardMarker() { }
 
         public HazardMarker(float songTime, MarkerSource source, bool imported = false)

@@ -4,35 +4,72 @@
 
   <text id='status-text' text='' font-size='3.2' align='Center'/>
 
-  <slider-setting
-    text='Minutes'
-    value='minutes'
-    integer-only='true'
-    min='0'
-    max='20'
-    increment='1'
-    show-buttons='true'
+  <!-- Label は Markers（Rename）でも Add でも使うので、タブの外の上側に置く -->
+  <string-setting
+    text='Label'
+    value='label'
+    hover-hint='Display name. Empty falls back to WALL / FAIL / MARK.'
     apply-on-change='true'
     bind-value='true'/>
 
-  <slider-setting
-    text='Seconds'
-    value='seconds'
-    integer-only='true'
-    min='0'
-    max='59'
-    increment='1'
-    show-buttons='true'
-    apply-on-change='true'
-    bind-value='true'/>
+  <!-- tab / tab-selector は絶対配置される。高さと幅を持たせた入れ物で包まないと、
+       縦レイアウトの中で潰れて全タブが同じ位置に重なる（幅が潰れると文字が縦積みになる） -->
+  <vertical pref-height='7' pref-width='66'>
+    <tab-selector tab-tag='hazard-timer-tabs'
+                  size-delta-x='-4' size-delta-y='6'
+                  child-expand-width='true' child-control-width='true'/>
+  </vertical>
+
+  <vertical pref-height='30' pref-width='66'>
+    <tab tags='hazard-timer-tabs' tab-name='Markers'>
+      <vertical spacing='1'>
+        <list id='marker-list'
+              select-cell='marker-selected'
+              visible-cells='3'
+              cell-size='6'/>
+        <horizontal spacing='1'>
+          <button text='Delete' on-click='delete-selected' pref-width='30'
+                  hover-hint='Delete the selected marker. Imported ones can be restored with Import.'/>
+          <button text='Rename' on-click='rename-selected' pref-width='30'
+                  hover-hint='Rename the selected marker to the Label text.'/>
+        </horizontal>
+      </vertical>
+    </tab>
+
+    <tab tags='hazard-timer-tabs' tab-name='Add'>
+      <vertical spacing='1'>
+        <slider-setting
+          text='Minutes'
+          value='minutes'
+          integer-only='true'
+          min='0'
+          max='20'
+          increment='1'
+          show-buttons='true'
+          apply-on-change='true'
+          bind-value='true'/>
+
+        <slider-setting
+          text='Seconds'
+          value='seconds'
+          integer-only='true'
+          min='0'
+          max='59'
+          increment='1'
+          show-buttons='true'
+          apply-on-change='true'
+          bind-value='true'/>
+
+        <button text='Add Marker' on-click='add-marker'
+                hover-hint='Add a manual marker to the selected beatmap.'/>
+      </vertical>
+    </tab>
+  </vertical>
 
   <horizontal spacing='1'>
-    <button text='Add' on-click='add-marker' hover-hint='選択中の譜面に手動マーカーを追加する'/>
-    <button text='Clear Manual' on-click='clear-manual' hover-hint='手動マーカーだけ消す'/>
-  </horizontal>
-  <horizontal spacing='1'>
-    <button text='Import Replays' on-click='import-replays'
-            hover-hint='この譜面の過去のリプレイ（ローカル保存）から壁への接触地点を取り込む。通信は行わない'/>
-    <button text='Clear All' on-click='clear-all' hover-hint='この譜面の記録をすべて消す'/>
+    <button text='Import' on-click='import-replays' pref-width='30'
+            hover-hint='Re-import this beatmap from your local replays. No network access.'/>
+    <button text='Clear All' on-click='clear-all' pref-width='30'
+            hover-hint='Delete every marker for this beatmap and stop auto import.'/>
   </horizontal>
 </vertical>
