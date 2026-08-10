@@ -1,0 +1,32 @@
+﻿<vertical spacing="1" horizontal-fit="PreferredSize"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="https://monkeymanboy.github.io/BSML-Docs/ https://raw.githubusercontent.com/monkeymanboy/BSML-Docs/gh-pages/BSMLSchema.xsd">
+  <slider-setting
+    text='Counter X Offset'
+    hover-hint='Horizontal offset of the countdown text.'
+    value='counter-x-offset'
+    min='-20'
+    max='20'
+    increment='0.1'
+    formatter='FormatOneDecimal'
+    show-buttons='true'
+    apply-on-change='true'
+    bind-value='true'/>
+
+  <slider-setting
+    text='Counter Y Offset'
+    hover-hint='Vertical offset of the countdown text.'
+    value='counter-y-offset'
+    min='-20'
+    max='20'
+    increment='0.1'
+    formatter='FormatOneDecimal'
+    show-buttons='true'
+    apply-on-change='true'
+    bind-value='true'/>
+  <horizontal spacing='1' pad='0' pad-top='1'>
+    <text text='Other settings are in the Mods tab of the song select screen.'
+          font-size='3' align='Center'/>
+  </horizontal>
+</vertical>
+

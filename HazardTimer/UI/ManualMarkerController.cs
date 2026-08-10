@@ -1,9 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Linq;
 using System.Text;
 using BeatSaberMarkupLanguage.Attributes;
 using BeatSaberMarkupLanguage.Components;
+using BeatSaberMarkupLanguage.Parser;
 using HazardTimer.Markers;
 using HazardTimer.Replay;
 using HazardTimer.Services;
@@ -16,18 +18,40 @@ namespace HazardTimer.UI
     /// 曲選択画面の Mods タブに出すマーカー編集 UI。
     /// 一覧からの削除、名前の変更、分＋秒での追加、リプレイの取り込みを行う。
     /// </summary>
-    public class ManualMarkerController : IDisposable
+    public class ManualMarkerController : IDisposable, INotifyPropertyChanged
     {
+        /// <summary>
+        /// 一覧でマーカーを選んだときに Rename 用の入力欄へ名前を流し込むため、
+        /// BSML の bind-value に変更を通知する。
+        /// </summary>
+        public event PropertyChangedEventHandler? PropertyChanged;
+
+        private void NotifyChanged(string propertyName)
+            => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+
         internal const string TabName = "HazardTimer";
         internal const string Resource = "HazardTimer.Resources.ManualMarker.bsml";
 
         [UIComponent("status-text")] private readonly TextMeshProUGUI? statusText = null;
         [UIComponent("marker-list")] private readonly CustomListTableData? markerList = null;
+        [UIParams] private readonly BSMLParserParams? parserParams = null;
+
+        /// <summary>
+        /// 設定部品がホストの値を読み直すイベント名。BSML の既定値。
+        /// </summary>
+        private const string RefreshValuesEvent = "cancel";
 
         /// <summary>一覧に出している順のマーカー。選択位置と対応させる。</summary>
         private readonly List<HazardMarker> listed = new List<HazardMarker>();
 
-        private int selectedIndex = -1;
+        /// <summary>
+        /// 選択中のマーカー。位置ではなく実体で覚える。
+        /// 時刻を書き換えると並び順が変わるため、位置では追えなくなる。
+        /// </summary>
+        private HazardMarker? selectedMarker;
+
+        // 入力欄は 1 組。一覧でマーカーを選ぶとその内容が入り、
+        // Update で選択中のマーカーへ、Add で新しいマーカーとして反映する
         private int minutes;
         private int seconds;
         private string label = string.Empty;
@@ -52,26 +76,86 @@ namespace HazardTimer.UI
         public int Minutes
         {
             get => minutes;
-            set => minutes = value;
+            set
+            {
+                minutes = value;
+                NotifyChanged(nameof(Minutes));
+            }
         }
 
         [UIValue("seconds")]
         public int Seconds
         {
             get => seconds;
-            set => seconds = value;
+            set
+            {
+                seconds = value;
+                NotifyChanged(nameof(Seconds));
+            }
         }
 
         /// <summary>
-        /// 追加時に付ける名前。空なら種別ごとの既定（MARK など）になる。
-        /// 選択中のマーカーがあれば Rename でそれに付け替えられる。
+        /// マーカーの表示名。空なら種別ごとの既定（WALL / FAIL / MARK）になる。
         /// </summary>
         [UIValue("label")]
         public string Label
         {
             get => label;
-            set => label = value ?? string.Empty;
+            set
+            {
+                label = value ?? string.Empty;
+                NotifyChanged(nameof(Label));
+            }
         }
+
+        // ───── 挙動の設定 ─────
+        // Counters+ の画面はカウンターの配置を決める場所なので、そちらには見た目だけを置き、
+        // 記録の取り方やカウントダウンの秒数はここ（曲選択画面）に集約する。
+
+        [UIValue("lead-time")]
+        public float LeadTimeSeconds
+        {
+            get => PluginConfig.Instance.LeadTimeSeconds;
+            set => PluginConfig.Instance.LeadTimeSeconds = value;
+        }
+
+        [UIValue("cluster-threshold")]
+        public float ClusterThresholdSeconds
+        {
+            get => PluginConfig.Instance.ClusterThresholdSeconds;
+            set => PluginConfig.Instance.ClusterThresholdSeconds = value;
+        }
+
+        [UIValue("record-wall-hits")]
+        public bool RecordWallHits
+        {
+            get => PluginConfig.Instance.RecordWallHits;
+            set => PluginConfig.Instance.RecordWallHits = value;
+        }
+
+        [UIValue("record-fails")]
+        public bool RecordFails
+        {
+            get => PluginConfig.Instance.RecordFails;
+            set => PluginConfig.Instance.RecordFails = value;
+        }
+
+        [UIValue("show-fail-marker")]
+        public bool ShowFailMarker
+        {
+            get => PluginConfig.Instance.ShowFailMarker;
+            set => PluginConfig.Instance.ShowFailMarker = value;
+        }
+
+        [UIValue("auto-import-replays")]
+        public bool AutoImportReplays
+        {
+            get => PluginConfig.Instance.AutoImportReplays;
+            set => PluginConfig.Instance.AutoImportReplays = value;
+        }
+
+        [UIValue("FormatSeconds")]
+        public string FormatSeconds(float value) => $"{value:F1} s";
 
         [UIAction("#post-parse")]
         public void PostParse() => Refresh();
@@ -79,11 +163,19 @@ namespace HazardTimer.UI
         [UIAction("marker-selected")]
         public void OnMarkerSelected(TableView _, int index)
         {
-            selectedIndex = index;
-            if (index >= 0 && index < listed.Count)
+            selectedMarker = index >= 0 && index < listed.Count ? listed[index] : null;
+            if (selectedMarker != null)
             {
-                // 選んだマーカーの名前を編集欄へ引き継ぐ
-                label = listed[index].Label ?? string.Empty;
+                // 選んだマーカーの内容を入力欄へ読み込む。そのまま Update で書き戻せる
+                var marker = selectedMarker;
+                var total = (int)marker.SongTime;
+                Label = marker.Label ?? string.Empty;
+                Minutes = total / 60;
+                Seconds = total % 60;
+
+                // ホスト側の値を変えただけでは表示が古いままなので、読み直させる。
+                // これを忘れると、画面の値と実際に使われる値が食い違う
+                parserParams?.EmitEvent(RefreshValuesEvent);
             }
             RefreshStatus();
         }
@@ -94,41 +186,45 @@ namespace HazardTimer.UI
             var set = CurrentSet();
             if (set == null) return;
 
-            if (selectedIndex < 0 || selectedIndex >= listed.Count)
+            var marker = selectedMarker;
+            if (marker == null)
             {
                 actionMessage = "Select a marker to delete";
                 RefreshStatus();
                 return;
             }
 
-            var marker = listed[selectedIndex];
             if (!set.Remove(marker)) return;
 
             actionMessage = marker.Imported
                 ? $"Deleted {FormatTime(marker.SongTime)} - Import restores it"
                 : $"Deleted {FormatTime(marker.SongTime)}";
 
-            selectedIndex = -1;
+            selectedMarker = null;
             Persist();
             Refresh();
         }
 
-        [UIAction("rename-selected")]
-        public void RenameSelected()
+        /// <summary>選択中のマーカーへ、入力欄の時刻と名前を書き戻す。</summary>
+        [UIAction("update-selected")]
+        public void UpdateSelected()
         {
             var set = CurrentSet();
             if (set == null) return;
 
-            if (selectedIndex < 0 || selectedIndex >= listed.Count)
+            if (selectedMarker == null)
             {
-                actionMessage = "Select a marker to rename";
+                actionMessage = "Select a marker to update";
                 RefreshStatus();
                 return;
             }
 
-            listed[selectedIndex].Label = string.IsNullOrWhiteSpace(label) ? null : label.Trim();
-            actionMessage = "Renamed";
-            Persist();
+            // 選択は解除しない。続けて微調整できるようにする
+            if (set.Update(selectedMarker, minutes * 60 + seconds, label))
+            {
+                actionMessage = $"Updated to {minutes}:{seconds:00}";
+                Persist();
+            }
             Refresh();
         }
 
@@ -199,8 +295,8 @@ namespace HazardTimer.UI
             set.AutoImportSuppressed = true;
             set.Clear();
 
-            selectedIndex = -1;
-            actionMessage = "Cleared - auto import disabled";
+            selectedMarker = null;
+            actionMessage = "Deleted all - auto import disabled";
             // 印そのものが状態変化なので、消すものが無くても必ず保存する
             Persist();
             Refresh();
@@ -215,7 +311,7 @@ namespace HazardTimer.UI
         private void OnSelectionChanged()
         {
             actionMessage = null;
-            selectedIndex = -1;
+            selectedMarker = null;
             Refresh();
         }
 
@@ -255,9 +351,26 @@ namespace HazardTimer.UI
             }
 
             markerList.TableView.ReloadData();
-            markerList.TableView.ClearSelection();
+
+            // 並べ直しで位置が変わるので、実体から探し直して選択を戻す
+            var selectedIndex = selectedMarker != null ? listed.IndexOf(selectedMarker) : -1;
+            if (selectedIndex >= 0)
+            {
+                markerList.TableView.SelectCellWithIdx(selectedIndex, false);
+                markerList.TableView.ScrollToCellWithIdx(
+                    selectedIndex, TableView.ScrollPositionType.Center, false);
+            }
+            else
+            {
+                selectedMarker = null;
+                markerList.TableView.ClearSelection();
+            }
         }
 
+        /// <summary>
+        /// 状態表示は 1 行だけにする。マーカーの内訳は Markers タブの一覧で見えるので、
+        /// 件数を並べても場所を取るだけだった。
+        /// </summary>
         private void RefreshStatus()
         {
             var set = CurrentSet();
@@ -267,33 +380,21 @@ namespace HazardTimer.UI
                 return;
             }
 
-            var measuredWall = set.Markers.Count(m => m.Source == MarkerSource.Wall && !m.Imported);
-            var importedWall = set.Markers.Count(m => m.Source == MarkerSource.Wall && m.Imported);
-            var manual = set.Markers.Count(m => m.Source == MarkerSource.Manual);
-
-            var sb = new StringBuilder();
-            sb.Append($"Wall {measuredWall}");
-            if (importedWall > 0) sb.Append($" (+{importedWall})");
-            sb.Append($" / Manual {manual}");
-            if (set.FailMarker != null) sb.Append(" / Fail");
-
-            sb.Append('\n');
             if (actionMessage != null)
             {
-                sb.Append(actionMessage);
-            }
-            else if (set.ImportedReplayCount > 0)
-            {
-                sb.Append($"Imported from {set.ImportedReplayCount} replay(s)");
-            }
-            else
-            {
-                var key = SelectedBeatmapTracker.Current;
-                var available = key.HasValue ? ReplayImportService.CountAvailable(key.Value) : 0;
-                sb.Append(available > 0 ? $"{available} replay(s) available" : "No replays");
+                SetStatus(actionMessage);
+                return;
             }
 
-            SetStatus(sb.ToString());
+            if (set.ImportedReplayCount > 0)
+            {
+                SetStatus($"Imported from {set.ImportedReplayCount} replay(s)");
+                return;
+            }
+
+            var key = SelectedBeatmapTracker.Current;
+            var available = key.HasValue ? ReplayImportService.CountAvailable(key.Value) : 0;
+            SetStatus(available > 0 ? $"{available} replay(s) available" : "No replays");
         }
 
         private static string FormatTime(float songTime)

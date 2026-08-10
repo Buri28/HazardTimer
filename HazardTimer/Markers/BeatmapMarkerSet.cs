@@ -142,6 +142,19 @@ namespace HazardTimer.Markers
             return true;
         }
 
+        /// <summary>
+        /// 既存のマーカーの時刻と名前を書き換える。時刻が変わるので並べ直す。
+        /// </summary>
+        public bool Update(HazardMarker marker, float songTime, string? label)
+        {
+            if (songTime < 0f || !markers.Contains(marker)) return false;
+
+            marker.SongTime = songTime;
+            marker.Label = string.IsNullOrWhiteSpace(label) ? null : label!.Trim();
+            Sort();
+            return true;
+        }
+
         public bool Remove(HazardMarker marker) => markers.Remove(marker);
 
         public bool RemoveAll(MarkerSource source) => markers.RemoveAll(m => m.Source == source) > 0;

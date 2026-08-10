@@ -3,53 +3,16 @@ using BeatSaberMarkupLanguage.Attributes;
 namespace HazardTimer.UI
 {
     /// <summary>
-    /// Mod Settings に出す設定画面のホスト。
-    /// カウントダウンの挙動に関わる値は、この 1 箇所からしか触らせない。
+    /// Counters+ の設定画面に出すホスト。
     /// </summary>
+    /// <remarks>
+    /// ここに置くのは<b>見た目の調整だけ</b>。カウントダウンの挙動に関わる設定は
+    /// 曲選択画面の Mods タブ（<see cref="ManualMarkerController"/>）に集約している。
+    /// Counters+ の画面はカウンターの配置を決める場所なので、
+    /// 記録の取り方のような設定が混ざると置き場所として分かりにくい。
+    /// </remarks>
     public class SettingController
     {
-        [UIValue("lead-time")]
-        public float LeadTimeSeconds
-        {
-            get => PluginConfig.Instance.LeadTimeSeconds;
-            set => PluginConfig.Instance.LeadTimeSeconds = value;
-        }
-
-        [UIValue("cluster-threshold")]
-        public float ClusterThresholdSeconds
-        {
-            get => PluginConfig.Instance.ClusterThresholdSeconds;
-            set => PluginConfig.Instance.ClusterThresholdSeconds = value;
-        }
-
-        [UIValue("record-wall-hits")]
-        public bool RecordWallHits
-        {
-            get => PluginConfig.Instance.RecordWallHits;
-            set => PluginConfig.Instance.RecordWallHits = value;
-        }
-
-        [UIValue("record-fails")]
-        public bool RecordFails
-        {
-            get => PluginConfig.Instance.RecordFails;
-            set => PluginConfig.Instance.RecordFails = value;
-        }
-
-        [UIValue("show-fail-marker")]
-        public bool ShowFailMarker
-        {
-            get => PluginConfig.Instance.ShowFailMarker;
-            set => PluginConfig.Instance.ShowFailMarker = value;
-        }
-
-        [UIValue("auto-import-replays")]
-        public bool AutoImportReplays
-        {
-            get => PluginConfig.Instance.AutoImportReplays;
-            set => PluginConfig.Instance.AutoImportReplays = value;
-        }
-
         [UIValue("counter-x-offset")]
         public float CounterXOffset
         {
@@ -71,9 +34,6 @@ namespace HazardTimer.UI
                 HazardTimerCounter.ApplyOffsets();
             }
         }
-
-        [UIValue("FormatSeconds")]
-        public string FormatSeconds(float value) => $"{value:F1} s";
 
         [UIValue("FormatOneDecimal")]
         public string FormatOneDecimal(float value) => value.ToString("F1");

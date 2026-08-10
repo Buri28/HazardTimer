@@ -1,51 +1,54 @@
-<vertical spacing="1" horizontal-fit="PreferredSize"
-  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-  xsi:schemaLocation="https://monkeymanboy.github.io/BSML-Docs/ https://raw.githubusercontent.com/monkeymanboy/BSML-Docs/gh-pages/BSMLSchema.xsd">
+<bg xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="https://monkeymanboy.github.io/BSML-Docs/ https://raw.githubusercontent.com/monkeymanboy/BSML-Docs/gh-pages/BSMLSchema.xsd">
 
-  <text id='status-text' text='' font-size='3.2' align='Center'/>
+  <horizontal spacing='3' preferred-width='115'>
 
-  <!-- Label は Markers（Rename）でも Add でも使うので、タブの外の上側に置く -->
-  <string-setting
-    text='Label'
-    value='label'
-    hover-hint='Display name. Empty falls back to WALL / FAIL / MARK.'
-    apply-on-change='true'
-    bind-value='true'/>
-
-  <!-- tab / tab-selector は絶対配置される。高さと幅を持たせた入れ物で包まないと、
-       縦レイアウトの中で潰れて全タブが同じ位置に重なる（幅が潰れると文字が縦積みになる） -->
-  <vertical pref-height='7' pref-width='66'>
-    <tab-selector tab-tag='hazard-timer-tabs'
-                  size-delta-x='-4' size-delta-y='6'
-                  child-expand-width='true' child-control-width='true'/>
-  </vertical>
-
-  <vertical pref-height='30' pref-width='66'>
-    <tab tags='hazard-timer-tabs' tab-name='Markers'>
-      <vertical spacing='1'>
+    <vertical child-control-height='false' spacing='2' preferred-width='42'
+              vertical-fit='PreferredSize' child-align='MiddleCenter'>
+      <horizontal bg='round-rect-panel' bg-color='#00000077' pad='1'>
         <list id='marker-list'
               select-cell='marker-selected'
-              visible-cells='3'
+              visible-cells='7'
               cell-size='6'/>
+      </horizontal>
+      <horizontal>
+        <page-button event-click='marker-list#PageUp' direction='Up' preferred-width='20'/>
+        <page-button event-click='marker-list#PageDown' direction='Down' preferred-width='20'/>
+      </horizontal>
+    </vertical>
+
+    <vertical spacing='1' horizontal-fit='Unconstrained'>
+
+      <horizontal spacing='1' pad='0' pref-height='7'>
+        <text id='status-text' text='' font-size='3' align='Left'/>
+        <button text='Settings' click-event='show-settings' pref-width='30'
+                hover-hint='Open the HazardTimer settings.'/>
+      </horizontal>
+
+      <vertical horizontal-fit='Unconstrained' child-control-height='false' child-expand-height='false'
+                bg='round-rect-panel' bg-color='#00000077' pad='1' pad-left='2' pad-right='2'>
         <horizontal spacing='1'>
-          <button text='Delete' on-click='delete-selected' pref-width='30'
-                  hover-hint='Delete the selected marker. Imported ones can be restored with Import.'/>
-          <button text='Rename' on-click='rename-selected' pref-width='30'
-                  hover-hint='Rename the selected marker to the Label text.'/>
+          <button text='Import' on-click='import-replays' pref-width='33'
+                  hover-hint='Re-import this beatmap from your local replays. No network access.'/>
+          <button text='Delete All' on-click='clear-all' pref-width='33'
+                  hover-hint='Delete every marker for this beatmap and stop auto import.'/>
         </horizontal>
       </vertical>
-    </tab>
 
-    <tab tags='hazard-timer-tabs' tab-name='Add'>
-      <vertical spacing='1'>
-        <slider-setting
+      <vertical horizontal-fit='Unconstrained' child-control-height='false' child-expand-height='false'
+                bg='round-rect-panel' bg-color='#00000077' pad='1' pad-left='2' pad-right='2'>
+        <string-setting
+          text='Label'
+          value='label'
+          hover-hint='Display name. Empty falls back to WALL / FAIL / MARK.'
+          apply-on-change='true'
+          bind-value='true'/>
+
+        <increment-setting
           text='Minutes'
           value='minutes'
           integer-only='true'
-          min='0'
-          max='20'
-          increment='1'
-          show-buttons='true'
+          min='0' max='20' increment='1'
           apply-on-change='true'
           bind-value='true'/>
 
@@ -53,23 +56,80 @@
           text='Seconds'
           value='seconds'
           integer-only='true'
-          min='0'
-          max='59'
-          increment='1'
+          min='0' max='59' increment='1'
           show-buttons='true'
           apply-on-change='true'
           bind-value='true'/>
 
-        <button text='Add Marker' on-click='add-marker'
-                hover-hint='Add a manual marker to the selected beatmap.'/>
+        <horizontal spacing='1'>
+          <button text='Delete' on-click='delete-selected' pref-width='22'
+                  hover-hint='Delete the selected marker. Imported ones can be restored with Import.'/>
+          <button text='Update' on-click='update-selected' pref-width='22'
+                  hover-hint='Write these values back to the selected marker.'/>
+          <button text='Add' on-click='add-marker' pref-width='22'
+                  hover-hint='Add a new marker with these values.'/>
+        </horizontal>
       </vertical>
-    </tab>
-  </vertical>
 
-  <horizontal spacing='1'>
-    <button text='Import' on-click='import-replays' pref-width='30'
-            hover-hint='Re-import this beatmap from your local replays. No network access.'/>
-    <button text='Clear All' on-click='clear-all' pref-width='30'
-            hover-hint='Delete every marker for this beatmap and stop auto import.'/>
+    </vertical>
+
   </horizontal>
-</vertical>
+
+  <modal id='settings-modal' show-event='show-settings' hide-event='hide-settings'
+         click-off-closes='true' move-to-center='true'
+         size-delta-x='106' size-delta-y='60'>
+    <vertical spacing='1' pad='2'>
+
+      <slider-setting
+        text='Lead Time'
+        hover-hint='How many seconds ahead the countdown starts.'
+        value='lead-time'
+        min='1' max='30' increment='0.5'
+        formatter='FormatSeconds'
+        show-buttons='true'
+        apply-on-change='true'
+        bind-value='true'/>
+
+      <slider-setting
+        text='Cluster Threshold'
+        hover-hint='Wall hits closer together than this are merged into one hazard.'
+        value='cluster-threshold'
+        min='0.5' max='15' increment='0.5'
+        formatter='FormatSeconds'
+        show-buttons='true'
+        apply-on-change='true'
+        bind-value='true'/>
+
+      <toggle-setting
+        text='Record Wall Hits'
+        hover-hint='Record where you hit walls.'
+        value='record-wall-hits'
+        apply-on-change='true'
+        bind-value='true'/>
+
+      <toggle-setting
+        text='Record Fails'
+        hover-hint='Record where you failed. With NoFail, the fail point is simulated.'
+        value='record-fails'
+        apply-on-change='true'
+        bind-value='true'/>
+
+      <toggle-setting
+        text='Show Fail Marker'
+        hover-hint='Show the fail countdown alongside the other markers.'
+        value='show-fail-marker'
+        apply-on-change='true'
+        bind-value='true'/>
+
+      <toggle-setting
+        text='Auto Import Replays'
+        hover-hint='Import from your local replays when a beatmap is selected. No network access.'
+        value='auto-import-replays'
+        apply-on-change='true'
+        bind-value='true'/>
+
+      <button text='Close' click-event='hide-settings' pref-width='33'/>
+
+    </vertical>
+  </modal>
+</bg>

@@ -41,7 +41,7 @@ namespace HazardTimer.Markers
         /// </summary>
         /// <remarks>
         /// カウンターは TextMeshPro の既定フォントで描くため、日本語などの
-        /// グリフを持たない文字は豆腐になる。英数字を推奨。
+        /// グリフを持たない文字は表示できず崩れる。英数字を推奨。
         /// </remarks>
         [JsonProperty("label")]
         public string? Label { get; set; }

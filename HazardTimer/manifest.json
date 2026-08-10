@@ -22,7 +22,7 @@
       "CounterLocation": "HazardTimer.UI.HazardTimerCounter",
       "MultiplayerReady": false,
       "BSML": {
-        "Resource": "HazardTimer.Resources.SettingsUI.bsml",
+        "Resource": "HazardTimer.Resources.CounterSettings.bsml",
         "Host": "HazardTimer.UI.SettingController"
       },
       "ConfigDefaults": {
