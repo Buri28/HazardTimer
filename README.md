@@ -46,6 +46,22 @@ BeatLeader MOD を使っていれば、**曲を選んだ時点で過去のプレ
 NoFail を付けていると、ゲームはどこで落ちていたかを記録しません。
 HazardTimer はゲーム本体と同じ規則で体力を数え直し、その地点をフェイルマーカーにします。
 
+## 設定
+
+Mods タブの `Settings` から変更できます。
+
+| 項目 | 内容 | 既定 |
+|---|---|---|
+| Lead Time | 何秒前からカウントダウンを表示するか | 10秒 |
+| Cluster Threshold | この秒数未満で続く壁への接触を1つの危険地点にまとめる | 5秒 |
+| Record Wall Hits | 壁に当たった地点を記録する | ON |
+| Record Fails | フェイルした地点を記録する | ON |
+| Show Fail Marker | フェイル地点のカウントダウンを他と併記する | ON |
+| Auto Import Replays | 曲を選んだときリプレイから自動で取り込む | ON |
+
+表示位置は `Mod Settings → Counters+ → Hazard Timer` の `Counter X Offset` /
+`Counter Y Offset` で調整します。
+
 ## 必要なMOD
 
 - BSIPA
