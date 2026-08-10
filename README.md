@@ -33,7 +33,8 @@
 壁への接触とフェイルは、プレイするだけで自動的に記録されます。
 
 マーカーの編集と設定は、曲選択画面の左パネル **Mods タブ → HazardTimer** で行います。
-<img width="50%" height="50%" alt="image" src="https://github.com/user-attachments/assets/46e1f0f1-bf8f-4c11-ab57-c396d4703c38" />
+<img width="50%" height="50%" alt="image" src="https://github.com/user-attachments/assets/27c70ef7-310d-4a7a-8471-871308b85b86" />
+
 
 
 ### 過去のリプレイから取り込む
@@ -49,6 +50,9 @@ HazardTimer はゲーム本体と同じ規則で体力を数え直し、その�
 ## 設定
 
 Mods タブの `Settings` から変更できます。
+
+![Uploading image.png…]()
+
 
 | 項目 | 内容 | 既定 |
 |---|---|---|
