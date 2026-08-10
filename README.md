@@ -63,6 +63,7 @@ Mods タブの `Settings` から変更できます。
 
 表示位置は `Mod Settings → Counters+ → Hazard Timer` の `Counter X Offset` /
 `Counter Y Offset` で調整します。
+<img width="50%" height="50%" alt="image" src="https://github.com/user-attachments/assets/41b815e5-437f-4956-b056-55a2c16d2a8b" />
 
 ## 必要なMOD
 
