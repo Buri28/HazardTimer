@@ -136,6 +136,11 @@
       <HintPath>$(BeatSaberManagedPath)\GameplayCore.dll</HintPath>
       <Private>False</Private>
     </Reference>
+    <!-- GameplayCoreSceneSetupData の基底 SceneSetupData -->
+    <Reference Include="BGLib.AppFlow">
+      <HintPath>$(BeatSaberManagedPath)\BGLib.AppFlow.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
     <!-- BeatmapCharacteristicSO の基底 -->
     <Reference Include="BGLib.UnityExtension">
       <HintPath>$(BeatSaberManagedPath)\BGLib.UnityExtension.dll</HintPath>

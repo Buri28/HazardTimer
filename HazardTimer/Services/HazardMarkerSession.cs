@@ -11,7 +11,9 @@ namespace HazardTimer.Services
     /// </summary>
     public class HazardMarkerSession : IInitializable, IDisposable
     {
-        [Inject] private readonly GameplayCoreSceneSetupData sceneSetupData = null!;
+        // マルチプレイのコンテナでも解決できるか分からないので必須にしない。
+        // 取れなければマーカーを持たないだけで、他のMODの初期化を巻き込んで落とさない
+        [Inject(Optional = true)] private readonly GameplayCoreSceneSetupData? sceneSetupData = null;
 
         private BeatmapMarkerSet? markerSet;
         private bool changed;
@@ -24,6 +26,12 @@ namespace HazardTimer.Services
 
         public void Initialize()
         {
+            if (sceneSetupData == null)
+            {
+                Plugin.Log?.Warn("GameplayCoreSceneSetupData unavailable; markers are disabled for this session.");
+                return;
+            }
+
             markerSet = MarkerStore.Instance.GetOrCreate(sceneSetupData.beatmapKey);
 
             // 自動取り込みで溜まった未保存ぶんを、プレイに入る前に確定させる

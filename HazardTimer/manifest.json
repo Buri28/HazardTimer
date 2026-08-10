@@ -20,7 +20,7 @@
     "CountersPlus.CustomCounter": {
       "Name": "Hazard Timer",
       "CounterLocation": "HazardTimer.UI.HazardTimerCounter",
-      "MultiplayerReady": false,
+      "MultiplayerReady": true,
       "BSML": {
         "Resource": "HazardTimer.Resources.CounterSettings.bsml",
         "Host": "HazardTimer.UI.SettingController"
