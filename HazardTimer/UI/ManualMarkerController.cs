@@ -194,7 +194,14 @@ namespace HazardTimer.UI
                 return;
             }
 
-            if (!set.Remove(marker)) return;
+            if (!set.Remove(marker))
+            {
+                // 一覧の再構築とすれ違って参照が古くなっている。選択を捨てて出し直す
+                selectedMarker = null;
+                actionMessage = "Select a marker to delete";
+                Refresh();
+                return;
+            }
 
             actionMessage = marker.Imported
                 ? $"Deleted {FormatTime(marker.SongTime)} - Import restores it"
@@ -212,20 +219,43 @@ namespace HazardTimer.UI
             var set = CurrentSet();
             if (set == null) return;
 
-            if (selectedMarker == null)
+            var marker = selectedMarker;
+            if (marker == null)
             {
                 actionMessage = "Select a marker to update";
                 RefreshStatus();
                 return;
             }
 
-            // 選択は解除しない。続けて微調整できるようにする
-            if (set.Update(selectedMarker, minutes * 60 + seconds, label))
+            var newTime = ResolveEditedTime(marker);
+            if (!set.CanMoveTo(marker, newTime, PluginConfig.Instance.ClusterThresholdSeconds))
             {
-                actionMessage = $"Updated to {minutes}:{seconds:00}";
-                Persist();
+                actionMessage = "Too close to another marker";
+                RefreshStatus();
+                return;
             }
+
+            // 選択は解除しない。続けて微調整できるようにする
+            actionMessage = set.Update(marker, newTime, label)
+                ? $"Updated to {FormatTime(newTime)}"
+                : "Could not update";
+            Persist();
             Refresh();
+        }
+
+        /// <summary>
+        /// 入力欄の分秒から、書き戻す時刻を決める。
+        /// </summary>
+        /// <remarks>
+        /// 実測や取り込みのマーカーは秒未満の端数を持つ。入力欄は秒単位なので、
+        /// 表示された値をそのまま書き戻すと端数が切り捨てられ、名前を変えただけで
+        /// マーカーが最大 1 秒手前へ動いてしまう。表示上は同じ秒に見えるので気づけない。
+        /// 分秒が読み込んだときのままなら、元の時刻を保つ。
+        /// </remarks>
+        private float ResolveEditedTime(HazardMarker marker)
+        {
+            var entered = minutes * 60 + seconds;
+            return (int)marker.SongTime == entered ? marker.SongTime : entered;
         }
 
         [UIAction("add-marker")]
@@ -242,6 +272,12 @@ namespace HazardTimer.UI
             {
                 actionMessage = $"Added at {minutes}:{seconds:00}";
                 Persist();
+            }
+            else
+            {
+                // 何も起きなかったことを伝えないと、前回の成功メッセージが残って
+                // 追加できたように見えてしまう
+                actionMessage = "A manual marker is already there";
             }
             Refresh();
         }
@@ -262,20 +298,21 @@ namespace HazardTimer.UI
                 return;
             }
 
-            // 手動で取り込み直したなら、以後の自動取り込みも許可する
-            AutoImportService.Allow(key.Value);
-
             var set = MarkerStore.Instance.GetOrCreate(key.Value);
-            set.AutoImportSuppressed = false;
-
             var result = ReplayImportService.Import(key.Value, set,
                                                     PluginConfig.Instance.ClusterThresholdSeconds);
 
             if (result.ReplayCount == 0)
             {
+                // 抑制は解除しない。取り込めていないのに解除すると、
+                // メモリ上とファイルで状態が食い違い、あとから勝手に書き戻る
                 SetStatus("No readable replays");
                 return;
             }
+
+            // 取り込めたときだけ、以後の自動取り込みも許可する
+            AutoImportService.Allow(key.Value);
+            set.AutoImportSuppressed = false;
 
             Persist();
             actionMessage = $"Imported from {result.ReplayCount} replay(s)";
@@ -302,6 +339,15 @@ namespace HazardTimer.UI
             Refresh();
         }
 
+        /// <summary>入力欄を空に戻し、表示にも反映させる。</summary>
+        private void ClearInputs()
+        {
+            Label = string.Empty;
+            Minutes = 0;
+            Seconds = 0;
+            parserParams?.EmitEvent(RefreshValuesEvent);
+        }
+
         private static void Persist()
         {
             MarkerStore.Instance.MarkDirty();
@@ -312,6 +358,9 @@ namespace HazardTimer.UI
         {
             actionMessage = null;
             selectedMarker = null;
+            // 前の譜面のマーカーから読み込んだ値が残っていると、
+            // そのまま Add を押したときに打ち込んでいない時刻で追加されてしまう
+            ClearInputs();
             Refresh();
         }
 

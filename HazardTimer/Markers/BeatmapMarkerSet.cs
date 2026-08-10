@@ -143,14 +143,50 @@ namespace HazardTimer.Markers
         }
 
         /// <summary>
+        /// そのマーカーを指定時刻へ動かしてよいか。
+        /// </summary>
+        /// <remarks>
+        /// 追加時に効いている規則（壁はクラスタ閾値、手動はほぼ同時刻の重複禁止）は、
+        /// 編集でも同じように守る必要がある。ここを素通しにすると、
+        /// 閾値未満で並んだ壁マーカーが作れてしまい、設計 2.2 が防いでいる
+        /// 「カウントダウンの連続再発火」が編集経由で入り込む。
+        /// </remarks>
+        public bool CanMoveTo(HazardMarker marker, float songTime, float thresholdSeconds)
+        {
+            if (songTime < 0f || !markers.Contains(marker)) return false;
+
+            foreach (var other in markers)
+            {
+                if (ReferenceEquals(other, marker)) continue;
+
+                switch (marker.Source)
+                {
+                    case MarkerSource.Wall when other.Source == MarkerSource.Wall:
+                        if (Math.Abs(other.SongTime - songTime) < thresholdSeconds) return false;
+                        break;
+                    case MarkerSource.Manual when other.Source == MarkerSource.Manual:
+                        if (Math.Abs(other.SongTime - songTime) < 0.05f) return false;
+                        break;
+                }
+            }
+            return true;
+        }
+
+        /// <summary>
         /// 既存のマーカーの時刻と名前を書き換える。時刻が変わるので並べ直す。
         /// </summary>
+        /// <remarks>
+        /// 手を入れた時点でそのマーカーは利用者の意思を表すものになるので、
+        /// 取り込み印を落とす。落とさないと、次の自動取り込みで
+        /// <see cref="RemoveImported"/> の対象になり編集が消える。
+        /// </remarks>
         public bool Update(HazardMarker marker, float songTime, string? label)
         {
             if (songTime < 0f || !markers.Contains(marker)) return false;
 
             marker.SongTime = songTime;
             marker.Label = string.IsNullOrWhiteSpace(label) ? null : label!.Trim();
+            marker.Imported = false;
             Sort();
             return true;
         }

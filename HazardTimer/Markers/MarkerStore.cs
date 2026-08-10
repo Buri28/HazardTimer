@@ -76,11 +76,19 @@ namespace HazardTimer.Markers
                         .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
 
                     var json = JsonConvert.SerializeObject(persisted, Formatting.Indented);
-                    // 書き込み途中でクラッシュしても既存ファイルを壊さないよう、一時ファイル経由で置き換える
+                    // 書き込み途中でクラッシュしても既存ファイルを壊さないよう、一時ファイル経由で置き換える。
+                    // Delete してから Move だと、その隙間で落ちると全譜面の記録が消える。
+                    // File.Replace なら差し替えが不可分になる
                     var tempPath = FilePath + ".tmp";
                     File.WriteAllText(tempPath, json);
-                    if (File.Exists(FilePath)) File.Delete(FilePath);
-                    File.Move(tempPath, FilePath);
+                    if (File.Exists(FilePath))
+                    {
+                        File.Replace(tempPath, FilePath, null);
+                    }
+                    else
+                    {
+                        File.Move(tempPath, FilePath);
+                    }
                     dirty = false;
                 }
                 catch (Exception e)
