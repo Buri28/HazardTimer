@@ -29,9 +29,12 @@
 カウントダウンは **Counters+ のカスタムカウンター** として表示されます。
 `Mod Settings → Counters+` の一覧から **Hazard Timer** を有効にしてください。
 
+<img width="50%" height="50%" alt="image" src="https://github.com/user-attachments/assets/41b815e5-437f-4956-b056-55a2c16d2a8b" />
+
 壁への接触とフェイルは、プレイするだけで自動的に記録されます。
 
 マーカーの編集と設定は、曲選択画面の左パネル **Mods タブ → HazardTimer** で行います。
+
 <img width="50%" height="50%" alt="image" src="https://github.com/user-attachments/assets/27c70ef7-310d-4a7a-8471-871308b85b86" />
 
 
@@ -63,7 +66,6 @@ Mods タブの `Settings` から変更できます。
 
 表示位置は `Mod Settings → Counters+ → Hazard Timer` の `Counter X Offset` /
 `Counter Y Offset` で調整します。
-<img width="50%" height="50%" alt="image" src="https://github.com/user-attachments/assets/41b815e5-437f-4956-b056-55a2c16d2a8b" />
 
 ## 必要なMOD
 
