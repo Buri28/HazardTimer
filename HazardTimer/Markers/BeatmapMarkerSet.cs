@@ -57,6 +57,13 @@ namespace HazardTimer.Markers
         public int Count => markers.Count;
 
         /// <summary>
+        /// 内容が変わるたびに増える番号。
+        /// 表示側が「作り直す必要があるか」を安く判定するために使う。
+        /// </summary>
+        [JsonIgnore]
+        public int Version { get; private set; }
+
+        /// <summary>
         /// 実測した壁マーカーを追加する。
         /// ほぼ同じ時刻の記録があればまとめ、取り込みマーカーなら実測で置き換える。
         /// </summary>
@@ -244,6 +251,7 @@ namespace HazardTimer.Markers
             markers.Clear();
             ImportedReplayCount = 0;
             ImportedLatestTimestamp = 0;
+            Normalize();
             return true;
         }
 
@@ -312,6 +320,7 @@ namespace HazardTimer.Markers
         {
             markers.Sort((a, b) => a.SongTime.CompareTo(b.SongTime));
             RecomputeActive();
+            Version++;
         }
 
         /// <summary>そのマーカーと同じ危険地点として扱われる仲間（自分を含む）。</summary>

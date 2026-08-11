@@ -68,17 +68,38 @@ namespace HazardTimer.UI
         /// <summary>直近の操作結果。譜面を選び直したら消す。</summary>
         private string? actionMessage;
 
+        /// <summary>最後に一覧へ描いた内容の版。作り直しの要否を判定するのに使う。</summary>
+        private int renderedVersion = -1;
+
         public ManualMarkerController()
         {
             SelectedBeatmapTracker.SelectionChanged += OnSelectionChanged;
             // 自動取り込みは選択変更のあとに走るので、その完了でも表示を更新する
             AutoImportService.ImportCompleted += Refresh;
+            SelectedBeatmapTracker.Polled += OnPolled;
         }
 
         public void Dispose()
         {
             SelectedBeatmapTracker.SelectionChanged -= OnSelectionChanged;
             AutoImportService.ImportCompleted -= Refresh;
+            SelectedBeatmapTracker.Polled -= OnPolled;
+        }
+
+        /// <summary>
+        /// 内容が変わっていたら一覧を作り直す。
+        /// </summary>
+        /// <remarks>
+        /// 同じ譜面を続けて遊ぶと選択が変わらないので、プレイ中に増えたマーカーを
+        /// 反映する契機が無い。版を比べるだけなので、毎回呼ばれても負担にならない。
+        /// </remarks>
+        private void OnPolled()
+        {
+            var set = CurrentSet();
+            var version = set?.Version ?? -1;
+            if (version == renderedVersion) return;
+
+            Refresh();
         }
 
         [UIValue("minutes")]
@@ -444,6 +465,7 @@ namespace HazardTimer.UI
 
             var set = CurrentSet();
             if (set != null) listed.AddRange(set.Markers);
+            renderedVersion = set?.Version ?? -1;
 
             // パース前に選択変更が飛んでくることがあるので、部品が揃うまで触らない
             if (markerList == null || markerList.Data == null || markerList.TableView == null) return;

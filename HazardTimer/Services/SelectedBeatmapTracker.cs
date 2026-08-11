@@ -25,6 +25,21 @@ namespace HazardTimer.Services
         /// <summary>選択を見に行く間隔。曲を切り替えてから表示が追いつくまでの遅れになる。</summary>
         private const float PollIntervalSeconds = 0.25f;
 
+        /// <summary>
+        /// 探索が空振りしたあと、次に探すまでの待ち時間。
+        /// </summary>
+        /// <remarks>
+        /// <see cref="Resources.FindObjectsOfTypeAll{T}"/> は読み込み済みオブジェクトを
+        /// 走査するので安くない。曲選択にいない間は毎回空振りするため、
+        /// 間隔を空けないと待っているだけで走査し続けることになる。
+        /// </remarks>
+        private const float RescanBackoffSeconds = 2.0f;
+
+        private float nextScanTime;
+
+        /// <summary>この巡回で探索を許すか。1 巡につき 1 回だけ判定する。</summary>
+        private bool scanning;
+
         [Inject] private readonly DiContainer container = null!;
 
         /// <summary>
@@ -56,6 +71,15 @@ namespace HazardTimer.Services
         /// <summary>選択が変わったときに発火する。</summary>
         public static event Action? SelectionChanged;
 
+        /// <summary>
+        /// 選択を見に行くたびに発火する。変化の有無にかかわらず毎回呼ばれる。
+        /// </summary>
+        /// <remarks>
+        /// 同じ譜面を続けて遊ぶと選択は変わらないので、プレイ中に増えたマーカーを
+        /// 表示へ反映する契機が無くなる。表示側が安い判定で追随できるように出しておく。
+        /// </remarks>
+        public static event Action? Polled;
+
         public void Initialize()
         {
             active = this;
@@ -84,6 +108,14 @@ namespace HazardTimer.Services
 
         private void Poll()
         {
+            UpdateSelection();
+            Polled?.Invoke();
+        }
+
+        private void UpdateSelection()
+        {
+            scanning = ShouldScan();
+
             // 譜面そのものを持っている詳細画面を優先し、無ければ 1 つ上の階層を見る
             var fromDetail = FindDetailView();
             if (fromDetail != null && TryTake(fromDetail.beatmapKey, fromDetail.beatmapLevel)) return;
@@ -105,6 +137,7 @@ namespace HazardTimer.Services
 
             if (!IsUsable(leaderboard))
             {
+                if (!scanning) return null;
                 leaderboard = FindActive<PlatformLeaderboardViewController>();
             }
             if (leaderboard == null) return null;
@@ -120,9 +153,22 @@ namespace HazardTimer.Services
             }
         }
 
+        /// <summary>
+        /// 掴んだものが使えなくなったときだけ探し直す。
+        /// 空振りが続く間は間隔を空け、走査そのものを減らす。
+        /// </summary>
+        private bool ShouldScan()
+        {
+            if (Time.unscaledTime < nextScanTime) return false;
+
+            nextScanTime = Time.unscaledTime + RescanBackoffSeconds;
+            return true;
+        }
+
         private StandardLevelDetailViewController? FindDetailView()
         {
             if (IsUsable(detailView)) return detailView;
+            if (!scanning) return null;
 
             detailView = FindActive<StandardLevelDetailViewController>();
             return detailView;
@@ -131,6 +177,7 @@ namespace HazardTimer.Services
         private LevelSelectionNavigationController? FindSelectionNav()
         {
             if (IsUsable(selectionNav)) return selectionNav;
+            if (!scanning) return null;
 
             selectionNav = FindActive<LevelSelectionNavigationController>();
             return selectionNav;
