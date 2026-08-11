@@ -154,6 +154,15 @@
         apply-on-change='true'
         bind-value='true'/>
 
+      <increment-setting
+        text='Max Bomb Markers'
+        hover-hint='How many bomb-hit spots to import. Bombs are rarer than misses, so imported spots are turned on. 0 imports none.'
+        value='max-bomb-markers'
+        integer-only='true'
+        min='0' max='50' increment='1'
+        apply-on-change='true'
+        bind-value='true'/>
+
       <button text='Close' click-event='hide-settings' pref-width='33'/>
 
     </vertical>

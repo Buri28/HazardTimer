@@ -83,6 +83,7 @@ namespace HazardTimer.Markers
             MarkerSource.Fail => "FAIL",
             MarkerSource.Manual => "MARK",
             MarkerSource.Miss => "MISS",
+            MarkerSource.Bomb => "BOMB",
             _ => "WALL",
         };
 

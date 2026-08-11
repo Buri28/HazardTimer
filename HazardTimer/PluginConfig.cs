@@ -51,6 +51,15 @@ namespace HazardTimer
         /// </remarks>
         public virtual int MaxMissMarkers { get; set; } = 10;
 
+        /// <summary>
+        /// 1 譜面あたり何個まで爆弾の被弾地点を取り込むか。0 なら取り込まない。
+        /// </summary>
+        /// <remarks>
+        /// 爆弾はミスほど頻繁には当たらないので、取り込んだものは既定で使う指定にする。
+        /// ボムリセットのような、当たると立て直せない配置を見落とさないため。
+        /// </remarks>
+        public virtual int MaxBombMarkers { get; set; } = 5;
+
         public virtual float CounterXOffset { get; set; } = 0.0f;
         public virtual float CounterYOffset { get; set; } = 0.0f;
     }

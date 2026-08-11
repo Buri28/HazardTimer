@@ -204,6 +204,13 @@ namespace HazardTimer.UI
             set => PluginConfig.Instance.MaxMissMarkers = value;
         }
 
+        [UIValue("max-bomb-markers")]
+        public int MaxBombMarkers
+        {
+            get => PluginConfig.Instance.MaxBombMarkers;
+            set => PluginConfig.Instance.MaxBombMarkers = value;
+        }
+
         [UIValue("FormatSeconds")]
         public string FormatSeconds(float value) => $"{value:F1} s";
 
@@ -406,6 +413,11 @@ namespace HazardTimer.UI
                 return;
             }
 
+            // 押した時点で読み直す。索引はプレイ終了時とメニュー入場時にしか
+            // 作り直しておらず、BeatLeader の書き出しと前後すると
+            // 直前のプレイのリプレイが載っていないことがある
+            ReplayFileIndex.Invalidate();
+
             var set = MarkerStore.Instance.GetOrCreate(key.Value);
             var result = ReplayImportService.Import(key.Value, set);
 
@@ -588,7 +600,12 @@ namespace HazardTimer.UI
             var parts = new List<string> { marker.Source.ToString() };
 
             if (marker.HitCount > 1) parts.Add($"x{marker.HitCount}");
-            if (marker.Imported && marker.Source != MarkerSource.Miss) parts.Add("Imp");
+            if (marker.Imported
+                && marker.Source != MarkerSource.Miss
+                && marker.Source != MarkerSource.Bomb)
+            {
+                parts.Add("Imp");
+            }
 
             if (marker.State == MarkerState.On) parts.Add("On");
             else if (marker.State == MarkerState.Off) parts.Add("Off");

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using HazardTimer.Markers;
@@ -31,8 +32,21 @@ namespace HazardTimer.Replay
     /// </remarks>
     public static class ReplayImportService
     {
-        /// <summary>BSOR のノートイベント種別。2 は見逃し。</summary>
+        /// <summary>BSOR のノートイベント種別。1 は切り損ね、2 は見逃し、3 は爆弾。</summary>
+        private const int NoteEventBad = 1;
         private const int NoteEventMiss = 2;
+        private const int NoteEventBomb = 3;
+
+        /// <summary>
+        /// 落とした扱いにするイベントか。
+        /// </summary>
+        /// <remarks>
+        /// 見逃しだけでなく切り損ねも含める。利用者から見ればどちらも「ミス」であり、
+        /// 判定が崩れる箇所という意味では区別する理由が無い。
+        /// 爆弾は当たっても続きが崩れるとは限らないので含めない。
+        /// </remarks>
+        private static bool IsMissed(ReplayNoteEvent note) =>
+            note.EventType == NoteEventMiss || note.EventType == NoteEventBad;
 
         /// <summary>
         /// ミス地点を取り込む。
@@ -51,10 +65,39 @@ namespace HazardTimer.Replay
         /// </remarks>
         private static void ImportMisses(List<BsorReplay> parsed, BeatmapMarkerSet set)
         {
-            var limit = PluginConfig.Instance.MaxMissMarkers;
+            ImportHits(parsed, set, MarkerSource.Miss,
+                       PluginConfig.Instance.MaxMissMarkers, IsMissed, allOn: false);
+        }
+
+        /// <summary>
+        /// 爆弾に当たった地点を取り込む。
+        /// </summary>
+        /// <remarks>
+        /// 選び方はミスと同じだが、取り込んだものは全部使う指定にする。
+        /// 爆弾はミスほど当たらないので数が並ばず、また当たると立て直しが利かない。
+        /// ボムリセットのような配置は、事前に分かっていること自体に意味がある。
+        /// </remarks>
+        private static void ImportBombs(List<BsorReplay> parsed, BeatmapMarkerSet set)
+        {
+            ImportHits(parsed, set, MarkerSource.Bomb,
+                       PluginConfig.Instance.MaxBombMarkers,
+                       note => note.EventType == NoteEventBomb, allOn: true);
+        }
+
+        /// <summary>
+        /// 該当するノートイベントを箇所ごとにまとめ、上限まで取り込む。
+        /// </summary>
+        /// <param name="allOn">
+        /// true なら取り込んだ全てを使う指定にする。
+        /// false なら、最も重なっている箇所の先頭 1 つだけを使う指定にする。
+        /// </param>
+        private static void ImportHits(List<BsorReplay> parsed, BeatmapMarkerSet set,
+                                       MarkerSource source, int limit,
+                                       Func<ReplayNoteEvent, bool> match, bool allOn)
+        {
             if (limit <= 0) return;
 
-            var clusters = BuildMissClusters(parsed, PluginConfig.Instance.ClusterThresholdSeconds);
+            var clusters = BuildClusters(parsed, PluginConfig.Instance.ClusterThresholdSeconds, match);
 
             var ordered = clusters
                 .Where(c => c.Value.Count > 1)
@@ -64,16 +107,24 @@ namespace HazardTimer.Replay
                 .Take(limit)
                 .ToList();
 
+            var added = 0;
             for (var index = 0; index < ordered.Count; index++)
             {
                 // 並びの先頭が「最も重なっていて、その中で最も早い」箇所になる。
                 // 重なりが無い譜面では、どれも使う指定にしない
-                var missedPlays = ordered[index].Value.Count;
-                var isPrimary = index == 0 && missedPlays > 1;
-                set.AddImportedMiss(ordered[index].Key,
-                                    isPrimary ? MarkerState.On : MarkerState.Off,
-                                    missedPlays);
+                var playCount = ordered[index].Value.Count;
+                var on = allOn || (index == 0 && playCount > 1);
+                if (set.AddImportedHit(ordered[index].Key, source,
+                                       on ? MarkerState.On : MarkerState.Off,
+                                       playCount))
+                {
+                    added++;
+                }
             }
+
+            Plugin.Log?.Info(
+                $"{source}: {clusters.Count} spot(s), {added} added (limit {limit}), " +
+                $"{clusters.Count(c => c.Value.Count > 1)} hit in more than one play.");
         }
 
         /// <summary>
@@ -85,15 +136,22 @@ namespace HazardTimer.Replay
         /// ミスは密なので曲全体が 1 つに繋がってしまう。
         /// 実データでは 157 個のミスが 1 クラスタになり、まとめる意味が無くなっていた。
         /// </remarks>
-        private static List<MissCluster> BuildMissClusters(List<BsorReplay> parsed, float thresholdSeconds)
+        private static List<MissCluster> BuildClusters(List<BsorReplay> parsed, float thresholdSeconds,
+                                                       Func<ReplayNoteEvent, bool> match)
         {
             var points = new List<KeyValuePair<float, int>>();
             for (var index = 0; index < parsed.Count; index++)
             {
+                var stoppedAt = LastPlayedTime(parsed[index]);
+
                 foreach (var note in parsed[index].NoteEvents)
                 {
                     // チェーンの節の取りこぼしは付随的なものなので数えない
-                    if (note.EventType != NoteEventMiss || note.IsChainLink) continue;
+                    if (!match(note) || note.IsChainLink) continue;
+
+                    // やめた後に飛んでいたノートは実際のミスではない
+                    if (note.Time > stoppedAt) continue;
+
                     points.Add(new KeyValuePair<float, int>(note.Time, index));
                 }
             }
@@ -111,6 +169,27 @@ namespace HazardTimer.Replay
                 clusters[clusters.Count - 1].Value.Add(point.Value);
             }
             return clusters;
+        }
+
+        /// <summary>
+        /// そのプレイで最後に操作していた時刻。
+        /// </summary>
+        /// <remarks>
+        /// 曲を途中でやめると、その瞬間に飛んでいたノートが全部ミスとして記録される。
+        /// 実データでは末尾 2 秒に 11 個並んでおり、これを数えると上限枠を食い潰したうえ、
+        /// やめた地点が「よく落とす箇所」として上位に来てしまう。
+        /// 見逃し以外のイベント（切った・爆弾に当たった）が最後にあった時刻を境にして落とす。
+        /// </remarks>
+        private static float LastPlayedTime(BsorReplay replay)
+        {
+            var last = float.NegativeInfinity;
+            foreach (var note in replay.NoteEvents)
+            {
+                // 切り損ねは剣を振っているので操作していた証拠になる。見逃しだけを除く
+                if (note.EventType == NoteEventMiss) continue;
+                if (note.Time > last) last = note.Time;
+            }
+            return last;
         }
 
         /// <summary>この譜面で実際に読むリプレイ。新しいものから上限件数まで。</summary>
@@ -189,11 +268,26 @@ namespace HazardTimer.Replay
             }
 
             ImportMisses(parsed, set);
+            ImportBombs(parsed, set);
 
             // 読めなかったファイルがあっても、対象にした数と時刻で覚える。
             // 解析できた数で覚えると、壊れたファイルが 1 つあるだけで毎回やり直しになる
             set.ImportedReplayCount = sources.Count;
             set.ImportedLatestTimestamp = sources[sources.Count - 1].Timestamp;
+
+            // 「1 件しか読まれない」という報告の裏取り用。
+            // どのファイルを選んだかまで出す。件数だけだと、索引が古いのか
+            // 上限で切れたのか、そもそもファイルが無いのかを区別できない
+            Plugin.Log?.Info(
+                $"Import {BeatmapMarkerKey.From(key)}: " +
+                $"{sources.Count} of {ReplayFileIndex.Find(key).Count} replay file(s) selected " +
+                $"(limit {PluginConfig.Instance.MaxImportReplays}), {parsed.Count} readable. " +
+                $"Markers now {set.Count}.");
+
+            foreach (var file in sources)
+            {
+                Plugin.Log?.Info($"  {System.IO.Path.GetFileName(file.Path)}");
+            }
 
             return new ImportResult(parsed.Count, set.Count - before, failImported);
         }

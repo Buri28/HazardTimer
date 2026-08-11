@@ -93,21 +93,21 @@ namespace HazardTimer.Markers
         }
 
         /// <summary>
-        /// リプレイから取り込んだミス地点を追加する。
+        /// リプレイから取り込んだミス地点や被弾地点を追加する。
         /// </summary>
         /// <remarks>
         /// 使う・使わないは取り込み側が決める。ミスは数が多く、
         /// 全部を警告の対象にすると画面がふさがるため。
         /// </remarks>
-        /// <param name="missedPlays">その箇所を落としたプレイの数。多いほど本当の難所。</param>
-        public bool AddImportedMiss(float songTime, MarkerState state, int missedPlays)
+        /// <param name="playCount">その箇所を落としたプレイの数。多いほど本当の難所。</param>
+        public bool AddImportedHit(float songTime, MarkerSource source, MarkerState state, int playCount)
         {
-            if (NearestSameSpot(songTime, MarkerSource.Miss) != null) return false;
+            if (NearestSameSpot(songTime, source) != null) return false;
 
-            Insert(new HazardMarker(songTime, MarkerSource.Miss, imported: true)
+            Insert(new HazardMarker(songTime, source, imported: true)
             {
                 State = state,
-                HitCount = missedPlays,
+                HitCount = playCount,
             });
             return true;
         }
@@ -372,7 +372,7 @@ namespace HazardTimer.Markers
             ActivateOne(markers.Where(m => m.Source == MarkerSource.Fail).ToList(), byLatest: true);
 
             // 壁とミスは同じ表示枠だが、危険地点のまとめ方は種別ごとに独立させる
-            foreach (var source in new[] { MarkerSource.Wall, MarkerSource.Miss })
+            foreach (var source in new[] { MarkerSource.Wall, MarkerSource.Miss, MarkerSource.Bomb })
             {
                 foreach (var group in GroupsOf(source)) ActivateOne(group, byLatest: false);
             }
@@ -390,8 +390,8 @@ namespace HazardTimer.Markers
                     continue;
                 }
 
-                manual.IsActive = !markers.Any(other => (other.Source == MarkerSource.Wall
-                                                         || other.Source == MarkerSource.Miss)
+                manual.IsActive = !markers.Any(other => other.Source != MarkerSource.Manual
+                                                        && other.Source != MarkerSource.Fail
                                                         && other.IsActive
                                                         && Math.Abs(other.SongTime - manual.SongTime) < threshold);
             }
