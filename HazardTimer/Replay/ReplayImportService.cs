@@ -97,24 +97,42 @@ namespace HazardTimer.Replay
         {
             if (limit <= 0) return;
 
-            var clusters = BuildClusters(parsed, PluginConfig.Instance.ClusterThresholdSeconds, match);
+            var threshold = PluginConfig.Instance.ClusterThresholdSeconds;
+            var clusters = BuildClusters(parsed, threshold, match);
 
             var ordered = clusters
                 .Where(c => c.Value.Count > 1)
                 .OrderByDescending(c => c.Value.Count)
                 .ThenBy(c => c.Key)
                 .Concat(clusters.Where(c => c.Value.Count == 1).OrderBy(c => c.Key))
-                .Take(limit)
                 .ToList();
 
+            // 使う指定を付けてよいのは、その種別にまだ 1 つも無いときだけ。
+            // 既にあるものを黙って差し替えると、利用者が選んだ指定が消える
+            var canPromote = !allOn && !set.AnyOn(source);
             var added = 0;
-            for (var index = 0; index < ordered.Count; index++)
+            var merged = 0;
+
+            foreach (var cluster in ordered)
             {
-                // 並びの先頭が「最も重なっていて、その中で最も早い」箇所になる。
-                // 重なりが無い譜面では、どれも使う指定にしない
-                var playCount = ordered[index].Value.Count;
-                var on = allOn || (index == 0 && playCount > 1);
-                if (set.AddImportedHit(ordered[index].Key, source,
+                var playCount = cluster.Value.Count;
+
+                // 同じ危険地点が既にあるなら、回数だけ足す。
+                // 前回までに読んだリプレイの記録を残したまま積み上げるため
+                var existing = set.FindNear(cluster.Key, source, threshold);
+                if (existing != null)
+                {
+                    existing.HitCount += playCount;
+                    merged++;
+                    continue;
+                }
+
+                if (set.CountOf(source) >= limit) continue;
+
+                var on = allOn || (canPromote && playCount > 1);
+                if (on && !allOn) canPromote = false;
+
+                if (set.AddImportedHit(cluster.Key, source,
                                        on ? MarkerState.On : MarkerState.Off,
                                        playCount))
                 {
@@ -123,8 +141,8 @@ namespace HazardTimer.Replay
             }
 
             Plugin.Log?.Info(
-                $"{source}: {clusters.Count} spot(s), {added} added (limit {limit}), " +
-                $"{clusters.Count(c => c.Value.Count > 1)} hit in more than one play.");
+                $"{source}: {clusters.Count} spot(s) in new replay(s), " +
+                $"{added} added, {merged} merged into existing (limit {limit}, now {set.CountOf(source)}).");
         }
 
         /// <summary>
@@ -192,7 +210,7 @@ namespace HazardTimer.Replay
             return last;
         }
 
-        /// <summary>この譜面で実際に読むリプレイ。新しいものから上限件数まで。</summary>
+        /// <summary>この譜面で候補になるリプレイ。新しいものから上限件数まで。</summary>
         private static IReadOnlyList<ReplayFileInfo> SelectSources(BeatmapKey key)
         {
             var all = ReplayFileIndex.Find(key);
@@ -206,32 +224,28 @@ namespace HazardTimer.Replay
         /// <summary>この譜面で読む対象になるリプレイの件数。</summary>
         public static int CountAvailable(BeatmapKey key) => SelectSources(key).Count;
 
+        /// <summary>まだ読んでいないリプレイ。これが取り込みの対象になる。</summary>
+        private static List<ReplayFileInfo> UnreadSources(BeatmapKey key, BeatmapMarkerSet set)
+            => SelectSources(key).Where(file => !set.HasImported(file.Timestamp)).ToList();
+
+        /// <summary>取り込みが必要か。まだ読んでいないファイルが 1 つでもあれば必要。</summary>
+        public static bool NeedsImport(BeatmapKey key, BeatmapMarkerSet set)
+            => UnreadSources(key, set).Count > 0;
+
         /// <summary>
-        /// 取り込みが必要か。
+        /// 譜面 1 つ分を取り込む。
         /// </summary>
         /// <remarks>
-        /// 上限で件数が頭打ちになるので、件数では新しいプレイに気づけない。
-        /// 最も新しいリプレイの時刻で判断する。
+        /// まだ読んでいないリプレイだけを既存のマーカーへ足していく。
+        /// 読んだファイルは覚えるので、何度呼んでも二重に数えない。
+        /// 作り直さないのは、BeatLeader が古いリプレイを消すことがあるため。
+        /// 作り直す方式では、消えた時点でそれまでの記録も失われる。
         /// </remarks>
-        public static bool NeedsImport(BeatmapKey key, BeatmapMarkerSet set)
-        {
-            var sources = SelectSources(key);
-            if (sources.Count == 0) return false;
-
-            return set.ImportedLatestTimestamp != sources[sources.Count - 1].Timestamp
-                   || set.ImportedReplayCount != sources.Count;
-        }
-
-        /// <summary>
-        /// 譜面 1 つ分を取り込む。既存の取り込みマーカーは一度捨ててから作り直すので、
-        /// 何度呼んでも二重に増えない。実測マーカーには触れない。
-        /// </summary>
         public static ImportResult Import(BeatmapKey key, BeatmapMarkerSet set)
         {
-            var sources = SelectSources(key);
+            var sources = UnreadSources(key, set);
             if (sources.Count == 0) return new ImportResult(0, 0, false);
 
-            // 先に全部読む。1 つも読めないファイル群で既存の取り込み結果を捨てないため
             var parsed = new List<BsorReplay>(sources.Count);
             foreach (var file in sources)
             {
@@ -244,8 +258,6 @@ namespace HazardTimer.Replay
                 Plugin.Log?.Warn($"No readable replay among {sources.Count} file(s); keeping existing markers.");
                 return new ImportResult(0, 0, false);
             }
-
-            set.RemoveImported();
 
             var before = set.Count;
             var failImported = false;
@@ -270,19 +282,15 @@ namespace HazardTimer.Replay
             ImportMisses(parsed, set);
             ImportBombs(parsed, set);
 
-            // 読めなかったファイルがあっても、対象にした数と時刻で覚える。
-            // 解析できた数で覚えると、壊れたファイルが 1 つあるだけで毎回やり直しになる
-            set.ImportedReplayCount = sources.Count;
-            set.ImportedLatestTimestamp = sources[sources.Count - 1].Timestamp;
+            // 読めなかったファイルも読んだ印を付ける。そうしないと、壊れたファイルが
+            // 1 つあるだけで曲を選ぶたびに解析をやり直すことになる
+            foreach (var file in sources) set.MarkImported(file.Timestamp);
 
-            // 「1 件しか読まれない」という報告の裏取り用。
-            // どのファイルを選んだかまで出す。件数だけだと、索引が古いのか
-            // 上限で切れたのか、そもそもファイルが無いのかを区別できない
             Plugin.Log?.Info(
                 $"Import {BeatmapMarkerKey.From(key)}: " +
-                $"{sources.Count} of {ReplayFileIndex.Find(key).Count} replay file(s) selected " +
-                $"(limit {PluginConfig.Instance.MaxImportReplays}), {parsed.Count} readable. " +
-                $"Markers now {set.Count}.");
+                $"{sources.Count} new replay file(s) of {ReplayFileIndex.Find(key).Count} present, " +
+                $"{parsed.Count} readable. " +
+                $"Total imported {set.ImportedReplayCount}, markers now {set.Count}.");
 
             foreach (var file in sources)
             {

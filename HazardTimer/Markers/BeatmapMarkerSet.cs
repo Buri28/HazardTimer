@@ -31,16 +31,32 @@ namespace HazardTimer.Markers
         [JsonIgnore]
         public IReadOnlyList<HazardMarker> Markers => markers;
 
-        /// <summary>取り込み元になったリプレイの件数。0 なら未取り込み。</summary>
-        [JsonProperty("importedReplays")]
-        public int ImportedReplayCount { get; set; }
-
         /// <summary>
-        /// 取り込んだ中で最も新しいリプレイの時刻（UNIX 秒）。
-        /// 上限で件数が頭打ちになるため、再取り込みの要否は件数ではなくこれで判断する。
+        /// 取り込み済みのリプレイ（ファイル名の UNIX 秒）。
         /// </summary>
-        [JsonProperty("importedLatest")]
-        public long ImportedLatestTimestamp { get; set; }
+        /// <remarks>
+        /// BeatLeader は同じ譜面の古いリプレイを消すことがある。実際に、3 回続けて
+        /// 遊んだ譜面で毎回ファイルが 1 件しか残っていなかった。
+        /// 取り込むたびにマーカーを作り直す方式だと、ファイルが消えた時点で
+        /// それまでの記録も一緒に消える。読んだファイルを覚えておき、
+        /// まだ読んでいないものだけを足していくことで、記録を積み上げる。
+        /// </remarks>
+        [JsonProperty("importedFiles")]
+        private readonly List<long> importedTimestamps = new List<long>();
+
+        /// <summary>取り込み済みのリプレイ件数。0 なら未取り込み。</summary>
+        [JsonIgnore]
+        public int ImportedReplayCount => importedTimestamps.Count;
+
+        /// <summary>このリプレイを既に読んでいるか。</summary>
+        public bool HasImported(long timestamp) => importedTimestamps.Contains(timestamp);
+
+        /// <summary>このリプレイを読んだ印を付ける。</summary>
+        public void MarkImported(long timestamp)
+        {
+            if (importedTimestamps.Contains(timestamp)) return;
+            importedTimestamps.Add(timestamp);
+        }
 
         /// <summary>
         /// 自動取り込みの対象外にするか。手動で記録を全消しした譜面に立てる。
@@ -317,37 +333,25 @@ namespace HazardTimer.Markers
             return true;
         }
 
-        /// <summary>
-        /// 取り込みで作られたマーカーを消す。再取り込みの前処理。
-        /// </summary>
-        /// <remarks>
-        /// 使う・使わないを指定したものは残す。利用者が手を入れた結果なので、
-        /// 遊ぶたびに取り込みが走って指定が消えるのでは指定する意味がない。
-        /// </remarks>
-        public bool RemoveImported()
-        {
-            var removed = markers.RemoveAll(m => m.Imported && !m.UserTouched) > 0;
-
-            // 残したものは、この取り込みで数え直す。
-            // そうしないと再取り込みのたびに回数が積み上がる
-            foreach (var marker in markers.Where(m => m.Imported)) marker.HitCount = 0;
-            if (!removed && ImportedReplayCount == 0) return false;
-
-            ImportedReplayCount = 0;
-            ImportedLatestTimestamp = 0;
-            Normalize();
-            return true;
-        }
-
         public bool Clear()
         {
-            if (markers.Count == 0 && ImportedReplayCount == 0) return false;
+            if (markers.Count == 0 && importedTimestamps.Count == 0) return false;
             markers.Clear();
-            ImportedReplayCount = 0;
-            ImportedLatestTimestamp = 0;
+            importedTimestamps.Clear();
             Normalize();
             return true;
         }
+
+        /// <summary>同じ危険地点とみなせる既存マーカー。無ければ null。</summary>
+        public HazardMarker? FindNear(float songTime, MarkerSource source, float withinSeconds)
+            => markers.FirstOrDefault(m => m.Source == source
+                                           && Math.Abs(m.SongTime - songTime) < withinSeconds);
+
+        public int CountOf(MarkerSource source) => markers.Count(m => m.Source == source);
+
+        /// <summary>その種別に、使う指定のマーカーがあるか。</summary>
+        public bool AnyOn(MarkerSource source)
+            => markers.Any(m => m.Source == source && m.State == MarkerState.On);
 
         /// <summary>
         /// カウントダウンの対象を決め直す。
