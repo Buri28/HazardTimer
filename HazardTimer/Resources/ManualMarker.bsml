@@ -70,10 +70,12 @@
                   hover-hint='Add a new marker with these values.'/>
         </horizontal>
         <horizontal spacing='1'>
-          <button text='Turn On' on-click='turn-on' pref-width='34'
+          <button text='Turn On' on-click='turn-on' pref-width='22'
                   hover-hint='Always count down to this marker. Markers at a nearby time are turned off.'/>
-          <button text='Turn Off' on-click='turn-off' pref-width='34'
-                  hover-hint='Stop using this marker without deleting it.'/>
+          <button text='Turn Off' on-click='turn-off' pref-width='22'
+                  hover-hint='Stop using this marker without deleting it. Nothing else is turned on.'/>
+          <button text='All Off' on-click='all-off' pref-width='22'
+                  hover-hint='Turn off every marker for this beatmap without deleting them.'/>
         </horizontal>
       </vertical>
 
@@ -140,6 +142,15 @@
         value='max-import-replays'
         integer-only='true'
         min='1' max='50' increment='1'
+        apply-on-change='true'
+        bind-value='true'/>
+
+      <increment-setting
+        text='Max Miss Markers'
+        hover-hint='How many missed-note spots to import. Spots missed in several plays are turned on, the rest are added turned off. 0 imports none.'
+        value='max-miss-markers'
+        integer-only='true'
+        min='0' max='50' increment='1'
         apply-on-change='true'
         bind-value='true'/>
 

@@ -93,6 +93,26 @@ namespace HazardTimer.Markers
         }
 
         /// <summary>
+        /// リプレイから取り込んだミス地点を追加する。
+        /// </summary>
+        /// <remarks>
+        /// 使う・使わないは取り込み側が決める。ミスは数が多く、
+        /// 全部を警告の対象にすると画面がふさがるため。
+        /// </remarks>
+        /// <param name="missedPlays">その箇所を落としたプレイの数。多いほど本当の難所。</param>
+        public bool AddImportedMiss(float songTime, MarkerState state, int missedPlays)
+        {
+            if (NearestSameSpot(songTime, MarkerSource.Miss) != null) return false;
+
+            Insert(new HazardMarker(songTime, MarkerSource.Miss, imported: true)
+            {
+                State = state,
+                HitCount = missedPlays,
+            });
+            return true;
+        }
+
+        /// <summary>
         /// リプレイから取り込んだ壁マーカーを追加する。
         /// 同じ地点に実測マーカーがあれば、そちらを信用して何もしない。
         /// </summary>
@@ -215,14 +235,60 @@ namespace HazardTimer.Markers
             return true;
         }
 
-        /// <summary>そのマーカーを使わない指定にする。消さずに残す。</summary>
+        /// <summary>
+        /// そのマーカーを使わない指定にする。消さずに残す。
+        /// </summary>
+        /// <remarks>
+        /// カウントダウンに使われていたものを外した場合は、同じ危険地点の残りも
+        /// まとめて使わない指定にする。そうしないと自動選択が次の候補を拾い上げ、
+        /// 「使わないようにしたのに別のものが点いた」という結果になる。
+        /// </remarks>
         public bool TurnOff(HazardMarker marker)
         {
             if (!markers.Contains(marker)) return false;
 
+            var wasActive = marker.IsActive;
             marker.State = MarkerState.Off;
+
+            if (wasActive)
+            {
+                foreach (var member in SameHazard(marker))
+                {
+                    if (member.State == MarkerState.Auto) member.State = MarkerState.Off;
+                }
+            }
+
             Normalize();
             return true;
+        }
+
+        /// <summary>すべてのマーカーを使わない指定にする。</summary>
+        public bool AllOff()
+        {
+            if (markers.Count == 0) return false;
+
+            foreach (var marker in markers) marker.State = MarkerState.Off;
+            Normalize();
+            return true;
+        }
+
+        /// <summary>同じ危険地点として扱われる仲間（自分は含まない）。</summary>
+        private IEnumerable<HazardMarker> SameHazard(HazardMarker marker)
+        {
+            if (marker.Source == MarkerSource.Fail)
+            {
+                return markers.Where(m => m.Source == MarkerSource.Fail
+                                          && !ReferenceEquals(m, marker));
+            }
+
+            if (marker.Source == MarkerSource.Wall || marker.Source == MarkerSource.Miss)
+            {
+                var group = GroupsOf(marker.Source).FirstOrDefault(g => g.Contains(marker));
+                return group?.Where(m => !ReferenceEquals(m, marker))
+                       ?? Enumerable.Empty<HazardMarker>();
+            }
+
+            return Enumerable.Empty<HazardMarker>();
         }
 
         public bool Remove(HazardMarker marker)
@@ -297,12 +363,16 @@ namespace HazardTimer.Markers
                 if (candidates.Count > 0) candidates[candidates.Count - 1].IsActive = true;
             }
 
-            foreach (var group in WallGroups())
+            // 壁とミスは同じ表示枠だが、危険地点のまとめ方は種別ごとに独立させる
+            foreach (var source in new[] { MarkerSource.Wall, MarkerSource.Miss })
             {
-                if (group.Any(m => m.State == MarkerState.On)) continue;
+                foreach (var group in GroupsOf(source))
+                {
+                    if (group.Any(m => m.State == MarkerState.On)) continue;
 
-                var candidates = group.Where(m => m.State == MarkerState.Auto).ToList();
-                if (candidates.Count > 0) candidates[0].IsActive = true;
+                    var candidates = group.Where(m => m.State == MarkerState.Auto).ToList();
+                    if (candidates.Count > 0) candidates[0].IsActive = true;
+                }
             }
 
             // 手動は最後に決める。実測や取り込みで同じ地点が記録されているなら、
@@ -344,18 +414,18 @@ namespace HazardTimer.Markers
         /// 指定の有無に関係なく全ての壁で連鎖を組む。使わない指定のものを先に外すと、
         /// 鎖の途中が抜けてグループが分裂し、1 つの危険地点に 2 つの警告が立つ。
         /// </remarks>
-        private List<List<HazardMarker>> WallGroups()
+        private List<List<HazardMarker>> GroupsOf(MarkerSource source)
         {
             var threshold = PluginConfig.Instance.ClusterThresholdSeconds;
-            var walls = markers.Where(m => m.Source == MarkerSource.Wall).ToList();
+            var target = markers.Where(m => m.Source == source).ToList();
             var groups = new List<List<HazardMarker>>();
 
             var index = 0;
-            while (index < walls.Count)
+            while (index < target.Count)
             {
                 var end = index + 1;
-                while (end < walls.Count && walls[end].SongTime - walls[end - 1].SongTime < threshold) end++;
-                groups.Add(walls.GetRange(index, end - index));
+                while (end < target.Count && target[end].SongTime - target[end - 1].SongTime < threshold) end++;
+                groups.Add(target.GetRange(index, end - index));
                 index = end;
             }
             return groups;

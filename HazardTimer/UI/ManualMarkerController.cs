@@ -197,6 +197,13 @@ namespace HazardTimer.UI
             set => PluginConfig.Instance.MaxImportReplays = value;
         }
 
+        [UIValue("max-miss-markers")]
+        public int MaxMissMarkers
+        {
+            get => PluginConfig.Instance.MaxMissMarkers;
+            set => PluginConfig.Instance.MaxMissMarkers = value;
+        }
+
         [UIValue("FormatSeconds")]
         public string FormatSeconds(float value) => $"{value:F1} s";
 
@@ -265,6 +272,18 @@ namespace HazardTimer.UI
             actionMessage = set.TurnOff(marker)
                 ? $"Off: {FormatTime(marker.SongTime)}"
                 : "Could not change the marker";
+            Persist();
+            Refresh();
+        }
+
+        /// <summary>この譜面のマーカーをすべて使わない指定にする。</summary>
+        [UIAction("all-off")]
+        public void AllOff()
+        {
+            var set = CurrentSet();
+            if (set == null) return;
+
+            actionMessage = set.AllOff() ? "All markers off" : "Nothing to turn off";
             Persist();
             Refresh();
         }
@@ -493,12 +512,9 @@ namespace HazardTimer.UI
             markerList.Data.Clear();
             foreach (var marker in listed)
             {
-                // 種別は必ず出す。ラベルは自由に付けられるので、
-                // 手動マーカーに FAIL と名付けると本物のフェイルと見分けが付かなくなる
-                var hits = marker.HitCount > 1 ? $" x{marker.HitCount}" : string.Empty;
-                var source = marker.Source == MarkerSource.Manual
-                    ? "Manual"
-                    : $"{marker.Source} / {(marker.Imported ? "Imported" : "Measured")}";
+                // 一覧の幅が狭いので短くまとめる。長いと途中で切れて、
+                // 一番大事な On / Off が読めなくなる
+                var source = DescribeSource(marker);
 
                 // カウントダウンに使われる 1 つを色で示す。
                 // 近接した記録は全部残しているので、どれが選ばれたのか見えないと選び直せない。
@@ -508,17 +524,9 @@ namespace HazardTimer.UI
                           : marker.IsActive ? ActiveColor
                           : InactiveColor;
 
-                // 自動で選ばれたのか指定したのかが分かるようにする
-                var state = marker.State switch
-                {
-                    MarkerState.On => " / On",
-                    MarkerState.Off => " / Off",
-                    _ => string.Empty,
-                };
-
                 markerList.Data.Add(new CustomListTableData.CustomCellInfo(
                     $"<color={color}>{FormatTime(marker.SongTime)}  {marker.DisplayLabel}</color>",
-                    $"{source}{hits}{state}"));
+                    source));
             }
 
             markerList.TableView.ReloadData();
@@ -566,6 +574,26 @@ namespace HazardTimer.UI
             var key = SelectedBeatmapTracker.Current;
             var available = key.HasValue ? ReplayImportService.CountAvailable(key.Value) : 0;
             SetStatus(available > 0 ? $"{available} replay(s) available" : "No replays");
+        }
+
+        /// <summary>
+        /// 一覧のサブテキスト。種別・回数・出所・指定を短くまとめる。
+        /// </summary>
+        /// <remarks>
+        /// ミスの回数は「何回のプレイでそこを落としたか」。多いほど本当の難所。
+        /// ミスは取り込みでしか作られないので、出所は書かない。
+        /// </remarks>
+        private static string DescribeSource(HazardMarker marker)
+        {
+            var parts = new List<string> { marker.Source.ToString() };
+
+            if (marker.HitCount > 1) parts.Add($"x{marker.HitCount}");
+            if (marker.Imported && marker.Source != MarkerSource.Miss) parts.Add("Imp");
+
+            if (marker.State == MarkerState.On) parts.Add("On");
+            else if (marker.State == MarkerState.Off) parts.Add("Off");
+
+            return string.Join(" ", parts);
         }
 
         private static string FormatTime(float songTime)

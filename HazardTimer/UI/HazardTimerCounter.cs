@@ -21,10 +21,16 @@ namespace HazardTimer.UI
         /// <summary>この残り秒数を切ったら警告色にする。</summary>
         private const float WarningSeconds = 2.0f;
 
-        private static readonly Color CalmColor = new Color(1f, 1f, 1f, 0.9f);
-        private static readonly Color CautionColor = new Color(1f, 0.85f, 0.25f, 1f);
-        private static readonly Color WarningColor = new Color(1f, 0.35f, 0.3f, 1f);
-        private static readonly Color FailColor = new Color(0.75f, 0.55f, 1f, 1f);
+        // 行ごとに色を変えるので、文字列に埋め込む形で持つ。
+        // 1 つの TMP_Text に 2 行出しており、色を分けるにはこの方法しかない
+        private const string CalmColor = "#FFFFFF";
+        private const string CautionColor = "#FFD940";
+        private const string WarningColor = "#FF5A4D";
+
+        // フェイルは別の系統の色にして、近づいたら同じように赤へ寄せる。
+        // 1 色のままだと、あと何秒かが色から読み取れない
+        private const string FailCalmColor = "#B48CFF";
+        private const string FailCautionColor = "#FF9E40";
 
         private static HazardTimerCounter? activeInstance;
 
@@ -71,34 +77,32 @@ namespace HazardTimer.UI
             builder.Length = 0;
 
             // フェイル枠は他と競合させず、常に上の行に置く
-            if (fail.HasValue) AppendLine(builder, fail.Value);
+            if (fail.HasValue) AppendLine(builder, fail.Value, isFail: true);
             if (primary.HasValue)
             {
                 if (builder.Length > 0) builder.Append('\n');
-                AppendLine(builder, primary.Value);
+                AppendLine(builder, primary.Value, isFail: false);
             }
 
             counterText.text = builder.ToString();
-            // 色は「一番切迫している方」に合わせる
-            var nearest = primary.HasValue && fail.HasValue
-                ? Mathf.Min(primary.Value.RemainingSeconds, fail.Value.RemainingSeconds)
-                : (primary ?? fail!.Value).RemainingSeconds;
-            counterText.color = ColorFor(nearest, primary == null && fail.HasValue);
         }
 
-        private static void AppendLine(StringBuilder sb, CountdownEntry entry)
+        private static void AppendLine(StringBuilder sb, CountdownEntry entry, bool isFail)
         {
+            sb.Append("<color=");
+            sb.Append(ColorFor(entry.RemainingSeconds, isFail));
+            sb.Append('>');
             sb.Append(entry.Label);
             sb.Append(' ');
             sb.Append(Mathf.Max(entry.RemainingSeconds, 0f).ToString("F1"));
+            sb.Append("</color>");
         }
 
-        private static Color ColorFor(float remainingSeconds, bool failOnly)
+        private static string ColorFor(float remainingSeconds, bool isFail)
         {
-            if (failOnly) return FailColor;
             if (remainingSeconds <= WarningSeconds) return WarningColor;
-            if (remainingSeconds <= CautionSeconds) return CautionColor;
-            return CalmColor;
+            if (remainingSeconds <= CautionSeconds) return isFail ? FailCautionColor : CautionColor;
+            return isFail ? FailCalmColor : CalmColor;
         }
 
         private void CreateOrUpdateText()
@@ -111,7 +115,9 @@ namespace HazardTimer.UI
 
             counterText = canvasUtility.CreateTextFromSettings(Settings, Vector3.zero);
             counterText.fontSize = 4f;
-            counterText.color = CalmColor;
+            // 色は行ごとにテキスト側で指定する
+            counterText.richText = true;
+            counterText.color = Color.white;
             counterText.alignment = TextAlignmentOptions.Center;
             counterText.enableWordWrapping = false;
             counterText.lineSpacing = -30;

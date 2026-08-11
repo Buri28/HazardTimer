@@ -42,6 +42,15 @@ namespace HazardTimer
         /// </remarks>
         public virtual int MaxImportReplays { get; set; } = 10;
 
+        /// <summary>
+        /// 1 譜面あたり何個までミス地点を取り込むか。0 なら取り込まない。
+        /// </summary>
+        /// <remarks>
+        /// ミスは壁と比べて数が多いので、全部入れると一覧が埋まる。
+        /// 複数のプレイで重なっている箇所を優先し、残りは曲の先頭から埋める。
+        /// </remarks>
+        public virtual int MaxMissMarkers { get; set; } = 10;
+
         public virtual float CounterXOffset { get; set; } = 0.0f;
         public virtual float CounterYOffset { get; set; } = 0.0f;
     }

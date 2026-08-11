@@ -13,5 +13,14 @@ namespace HazardTimer.Markers
 
         /// <summary>プレイヤーが分＋秒で指定したもの。</summary>
         Manual = 2,
+
+        /// <summary>
+        /// ノートを見逃した地点。リプレイからのみ取り込む。
+        /// </summary>
+        /// <remarks>
+        /// 壁と違って数が多く、たまたま外しただけの箇所も混ざる。
+        /// 複数のプレイで同じ箇所を落としているものほど、実際の難所である見込みが高い。
+        /// </remarks>
+        Miss = 3,
     }
 }

@@ -1,4 +1,5 @@
-using System;
+﻿using System;
+using System.Linq;
 using HazardTimer.Markers;
 using Zenject;
 
@@ -43,8 +44,16 @@ namespace HazardTimer.Services
                 return;
             }
 
-            LastPlayedBeatmapKey = sceneSetupData.beatmapKey;
-            markerSet = MarkerStore.Instance.GetOrCreate(sceneSetupData.beatmapKey);
+            var beatmapKey = sceneSetupData.beatmapKey;
+            LastPlayedBeatmapKey = beatmapKey;
+            markerSet = MarkerStore.Instance.GetOrCreate(beatmapKey);
+
+            // 別の譜面のマーカーが出たという報告があり、再現できていない。
+            // どの譜面で何個読み込んだかを残しておけば、次に起きたとき突き合わせられる
+            Plugin.Log?.Info(
+                $"Markers loaded for {BeatmapMarkerKey.From(beatmapKey)}: " +
+                $"{markerSet.Count} marker(s), " +
+                $"{markerSet.Markers.Where(m => m.IsActive).Count()} active.");
 
             // 自動取り込みで溜まった未保存ぶんを、プレイに入る前に確定させる。
             // ここでリプレイの解析はしない。プレイ開始直後は FPS 半減の判定が入るため、
@@ -73,3 +82,4 @@ namespace HazardTimer.Services
         }
     }
 }
+
