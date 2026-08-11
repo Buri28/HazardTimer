@@ -107,9 +107,6 @@ namespace HazardTimer.Replay
                 .Concat(clusters.Where(c => c.Value.Count == 1).OrderBy(c => c.Key))
                 .ToList();
 
-            // 使う指定を付けてよいのは、その種別にまだ 1 つも無いときだけ。
-            // 既にあるものを黙って差し替えると、利用者が選んだ指定が消える
-            var canPromote = !allOn && !set.AnyOn(source);
             var added = 0;
             var merged = 0;
 
@@ -129,16 +126,18 @@ namespace HazardTimer.Replay
 
                 if (set.CountOf(source) >= limit) continue;
 
-                var on = allOn || (canPromote && playCount > 1);
-                if (on && !allOn) canPromote = false;
-
                 if (set.AddImportedHit(cluster.Key, source,
-                                       on ? MarkerState.On : MarkerState.Off,
+                                       allOn ? MarkerState.On : MarkerState.Off,
                                        playCount))
                 {
                     added++;
                 }
             }
+
+            // 使う指定は、積み上げた回数を見て最後に決める。
+            // 1 回の取り込みで読むのは、遊んだ直後なら 1 件だけ。
+            // その回の重なりだけで決めると、いつまでも候補が現れない
+            if (!allOn) set.PromoteMostHit(source);
 
             Plugin.Log?.Info(
                 $"{source}: {clusters.Count} spot(s) in new replay(s), " +

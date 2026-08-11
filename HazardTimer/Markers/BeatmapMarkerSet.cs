@@ -354,6 +354,32 @@ namespace HazardTimer.Markers
             => markers.Any(m => m.Source == source && m.State == MarkerState.On);
 
         /// <summary>
+        /// その種別で最もよく落としている箇所を 1 つだけ使う指定にする。
+        /// </summary>
+        /// <remarks>
+        /// 判断には積み上げた回数を使う。1 回の取り込みで読むリプレイは
+        /// 遊んだ直後なら 1 件しかないため、その回の重なりだけで決めると
+        /// いつまでも候補が現れない。
+        /// 利用者が指定を触ったものは動かさない。
+        /// </remarks>
+        public bool PromoteMostHit(MarkerSource source)
+        {
+            if (AnyOn(source)) return false;
+
+            var best = markers
+                .Where(m => m.Source == source && !m.UserTouched && m.HitCount > 1)
+                .OrderByDescending(m => m.HitCount)
+                .ThenBy(m => m.SongTime)
+                .FirstOrDefault();
+
+            if (best == null) return false;
+
+            best.State = MarkerState.On;
+            Normalize();
+            return true;
+        }
+
+        /// <summary>
         /// カウントダウンの対象を決め直す。
         /// </summary>
         /// <remarks>
@@ -444,11 +470,11 @@ namespace HazardTimer.Markers
         }
 
         /// <summary>
-        /// 壁マーカーを危険地点ごとにまとめる。
+        /// 同じ種別のマーカーを危険地点ごとにまとめる（壁・ミス・爆弾）。
         /// 判定は「直前のマーカーからの間隔」で連鎖させる（設計 2.2）。
         /// </summary>
         /// <remarks>
-        /// 指定の有無に関係なく全ての壁で連鎖を組む。使わない指定のものを先に外すと、
+        /// 指定の有無に関係なく全てのマーカーで連鎖を組む。使わない指定のものを先に外すと、
         /// 鎖の途中が抜けてグループが分裂し、1 つの危険地点に 2 つの警告が立つ。
         /// </remarks>
         private List<List<HazardMarker>> GroupsOf(MarkerSource source)

@@ -318,8 +318,10 @@ namespace HazardTimer.UI
                 return;
             }
 
+            // 取り込み済みのリプレイは読んだ印が残るので、Import を押しても戻らない。
+            // 戻せるのは Delete All のあとだけ
             actionMessage = marker.Imported
-                ? $"Deleted {FormatTime(marker.SongTime)} - Import restores it"
+                ? $"Deleted {FormatTime(marker.SongTime)} - not restored by Import"
                 : $"Deleted {FormatTime(marker.SongTime)}";
 
             selectedMarker = null;
@@ -423,6 +425,18 @@ namespace HazardTimer.UI
 
             if (result.ReplayCount == 0)
             {
+                // 取り込みは未読のリプレイだけを読む。既に全部読んでいるなら、
+                // 何も起きないのが正しい動作なので、失敗として見せない
+                if (set.ImportedReplayCount > 0)
+                {
+                    AutoImportService.Allow(key.Value);
+                    set.AutoImportSuppressed = false;
+                    Persist();
+                    SetStatus($"Up to date ({set.ImportedReplayCount} replay(s) imported)");
+                    Refresh();
+                    return;
+                }
+
                 // 抑制は解除しない。取り込めていないのに解除すると、
                 // メモリ上とファイルで状態が食い違い、あとから勝手に書き戻る
                 SetStatus("No readable replays");

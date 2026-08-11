@@ -52,7 +52,8 @@ namespace HazardTimer.Markers
         /// <remarks>
         /// <see cref="State"/> だけでは「取り込みが決めた指定」と「利用者が決めた指定」を
         /// 区別できない。ミス地点は取り込みが必ず On か Off を付けるため、
-        /// 状態で判断すると再取り込みで作り直せなくなり、古い集計が残り続ける。
+        /// 状態だけで判断すると、取り込みが自動で選び直すときに
+        /// 利用者の指定まで動かしてしまう。
         /// </remarks>
         [JsonProperty("userTouched")]
         public bool UserTouched { get; set; }
