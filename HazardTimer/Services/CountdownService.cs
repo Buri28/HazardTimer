@@ -51,6 +51,8 @@ namespace HazardTimer.Services
             foreach (var marker in set.Markers)
             {
                 if (marker.Source == MarkerSource.Fail) continue;
+                // 近接した記録のうち、対象に選ばれた 1 つだけを見る
+                if (!marker.IsActive) continue;
                 if (marker.SongTime < songTime) continue;
                 if (!IsWithinWindow(marker, songTime, leadTime)) break; // 昇順なのでこれ以降も窓の外
 
@@ -73,7 +75,7 @@ namespace HazardTimer.Services
         {
             if (!PluginConfig.Instance.ShowFailMarker) return null;
 
-            var marker = session.Markers?.FailMarker;
+            var marker = session.Markers?.ActiveFail;
             if (marker == null) return null;
 
             var songTime = audioTimeSyncController.songTime;

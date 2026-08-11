@@ -1,19 +1,53 @@
 using System;
+using System.Linq;
+using System.Reflection;
+using UnityEngine;
 using Zenject;
 
 namespace HazardTimer.Services
 {
     /// <summary>
-    /// 曲選択画面で今どの譜面が選ばれているかを追跡する。
-    /// 手動マーカーの追加先を決めるために必要。
+    /// 今どの譜面が選ばれているかを追跡する。
+    /// 手動マーカーの追加先と、自動取り込みの対象を決めるために必要。
     /// </summary>
+    /// <remarks>
+    /// Zenject で受け取ったコントローラーのイベントを購読する形だと、標準の曲選択でしか動かない。
+    /// MOD が用意した選曲画面（AccSaber のキャンペーンなど）は自前のインスタンスを使うため、
+    /// 注入されたものには変化が来ない。AccSaber 自身が
+    /// <c>FindObjectOfType&lt;StandardLevelDetailViewController&gt;()</c> で探しているのも同じ理由。
+    /// <para>
+    /// そこで、いま画面に出ているコントローラーを定期的に探しに行く方式にした。
+    /// 探索結果は使えなくなるまで持ち回すので、走査そのものはめったに起きない。
+    /// </para>
+    /// </remarks>
     public class SelectedBeatmapTracker : IInitializable, IDisposable
     {
-        [Inject(Optional = true)] private readonly StandardLevelDetailViewController? levelDetail = null;
+        /// <summary>選択を見に行く間隔。曲を切り替えてから表示が追いつくまでの遅れになる。</summary>
+        private const float PollIntervalSeconds = 0.25f;
+
+        [Inject] private readonly DiContainer container = null!;
+
+        /// <summary>
+        /// リーダーボードが表示中の譜面を保持しているフィールド。
+        /// </summary>
+        /// <remarks>
+        /// MOD 独自の選曲画面でも、リーダーボードを出す以上はゲーム本体の
+        /// <c>PlatformLeaderboardViewController</c> に譜面を渡すことになる。
+        /// 公開されていないので直接は読めないが、ゲーム本体の型なので
+        /// MOD の内部実装に踏み込むより壊れにくい。
+        /// </remarks>
+        private static readonly FieldInfo? LeaderboardBeatmapKeyField =
+            typeof(PlatformLeaderboardViewController)
+                .GetField("_beatmapKey", BindingFlags.NonPublic | BindingFlags.Instance);
+
+        private SelectionPoller? poller;
+        private StandardLevelDetailViewController? detailView;
+        private LevelSelectionNavigationController? selectionNav;
+        private PlatformLeaderboardViewController? leaderboard;
 
         private static SelectedBeatmapTracker? active;
 
-        /// <summary>現在選択中の譜面。メニュー外にいる間は null。</summary>
+        /// <summary>現在選択中の譜面。特定できない画面では null。</summary>
         public static BeatmapKey? Current { get; private set; }
 
         /// <summary>現在選択中の曲名。表示用。</summary>
@@ -25,55 +59,111 @@ namespace HazardTimer.Services
         public void Initialize()
         {
             active = this;
-            if (levelDetail == null)
-            {
-                Plugin.Log?.Warn("StandardLevelDetailViewController not available; manual markers are disabled.");
-                return;
-            }
 
-            levelDetail.didChangeContentEvent += OnContentChanged;
-            levelDetail.didChangeDifficultyBeatmapEvent += OnDifficultyChanged;
-            Refresh();
-        }
+            poller = container.InstantiateComponentOnNewGameObject<SelectionPoller>(
+                "HazardTimer_SelectionPoller");
+            poller.Initialize(Poll, PollIntervalSeconds);
 
-        private void OnContentChanged(StandardLevelDetailViewController _, StandardLevelDetailViewController.ContentType __)
-            => Refresh();
-
-        private void OnDifficultyChanged(StandardLevelDetailViewController _) => Refresh();
-
-        private void Refresh()
-        {
-            if (levelDetail == null) return;
-
-            var key = levelDetail.beatmapKey;
-            if (!key.IsValid())
-            {
-                Set(null, string.Empty);
-                return;
-            }
-
-            Set(key, levelDetail.beatmapLevel?.songName ?? string.Empty);
-        }
-
-        private static void Set(BeatmapKey? key, string songName)
-        {
-            Current = key;
-            CurrentSongName = songName;
-            SelectionChanged?.Invoke();
+            Poll();
         }
 
         public void Dispose()
         {
-            if (levelDetail != null)
+            if (poller != null)
             {
-                levelDetail.didChangeContentEvent -= OnContentChanged;
-                levelDetail.didChangeDifficultyBeatmapEvent -= OnDifficultyChanged;
+                UnityEngine.Object.Destroy(poller.gameObject);
+                poller = null;
             }
+
             if (active == this)
             {
                 active = null;
                 Set(null, string.Empty);
             }
+        }
+
+        private void Poll()
+        {
+            // 譜面そのものを持っている詳細画面を優先し、無ければ 1 つ上の階層を見る
+            var fromDetail = FindDetailView();
+            if (fromDetail != null && TryTake(fromDetail.beatmapKey, fromDetail.beatmapLevel)) return;
+
+            var fromSelection = FindSelectionNav();
+            if (fromSelection != null && TryTake(fromSelection.beatmapKey, fromSelection.beatmapLevel)) return;
+
+            // MOD 独自の選曲画面は上の 2 つを使わないことがある。
+            // その場合でもリーダーボードには譜面が渡っているので、そこから拾う
+            var fromLeaderboard = ReadLeaderboardBeatmapKey();
+            if (fromLeaderboard.HasValue && TryTake(fromLeaderboard.Value, null)) return;
+
+            Set(null, string.Empty);
+        }
+
+        private BeatmapKey? ReadLeaderboardBeatmapKey()
+        {
+            if (LeaderboardBeatmapKeyField == null) return null;
+
+            if (!IsUsable(leaderboard))
+            {
+                leaderboard = FindActive<PlatformLeaderboardViewController>();
+            }
+            if (leaderboard == null) return null;
+
+            try
+            {
+                return (BeatmapKey?)LeaderboardBeatmapKeyField.GetValue(leaderboard);
+            }
+            catch (Exception e)
+            {
+                Plugin.Log?.Warn($"Could not read the leaderboard beatmap: {e.Message}");
+                return null;
+            }
+        }
+
+        private StandardLevelDetailViewController? FindDetailView()
+        {
+            if (IsUsable(detailView)) return detailView;
+
+            detailView = FindActive<StandardLevelDetailViewController>();
+            return detailView;
+        }
+
+        private LevelSelectionNavigationController? FindSelectionNav()
+        {
+            if (IsUsable(selectionNav)) return selectionNav;
+
+            selectionNav = FindActive<LevelSelectionNavigationController>();
+            return selectionNav;
+        }
+
+        /// <summary>
+        /// いま画面に出ているものを探す。非表示のものまで含めて拾うと、
+        /// 前の画面に残った古いインスタンスを掴んでしまう。
+        /// </summary>
+        private static T? FindActive<T>() where T : MonoBehaviour
+            => Resources.FindObjectsOfTypeAll<T>().FirstOrDefault(IsUsable);
+
+        private static bool IsUsable<T>(T? behaviour) where T : MonoBehaviour
+            => behaviour != null && behaviour.isActiveAndEnabled;
+
+        private static bool TryTake(BeatmapKey key, BeatmapLevel? level)
+        {
+            if (!key.IsValid()) return false;
+
+            // 曲名が取れない経路もある。表示用なので無くても支障はない
+            Set(key, level?.songName ?? string.Empty);
+            return true;
+        }
+
+        private static void Set(BeatmapKey? key, string songName)
+        {
+            // 定期的に見に行くので、変わっていないときに通知を出さないようにする
+            if (!key.HasValue && !Current.HasValue) return;
+            if (key.HasValue && Current.HasValue && key.Value == Current.Value) return;
+
+            Current = key;
+            CurrentSongName = songName;
+            SelectionChanged?.Invoke();
         }
     }
 }

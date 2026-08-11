@@ -9,74 +9,89 @@ namespace HazardTimer.Markers
     /// 1 譜面（ハッシュ + characteristic + 難易度）分のマーカー集合。
     /// 常に譜面時間の昇順で保持する。
     /// </summary>
+    /// <remarks>
+    /// 近接したマーカーは捨てずに全部持ち、その中の 1 つだけを
+    /// カウントダウンの対象（<see cref="HazardMarker.IsActive"/>）にする。
+    /// 捨ててしまうと、どれが選ばれたのか利用者が確認できず、選び直すこともできない。
+    /// </remarks>
     public class BeatmapMarkerSet
     {
+        /// <summary>
+        /// これ以内は同じ地点の記録とみなして 1 つにまとめる。
+        /// </summary>
+        /// <remarks>
+        /// プレイ中に記録した時刻と、同じプレイのリプレイから取り込んだ時刻は
+        /// 0.05 秒ほどずれる。これより狭くすると同じ接触が 2 つ並んでしまう。
+        /// </remarks>
+        private const float SameSpotSeconds = 0.2f;
+
         [JsonProperty("markers")]
         private readonly List<HazardMarker> markers = new List<HazardMarker>();
 
         [JsonIgnore]
         public IReadOnlyList<HazardMarker> Markers => markers;
 
-        /// <summary>フェイルマーカー（1 譜面に最大 1 点）。無ければ null。</summary>
-        [JsonIgnore]
-        public HazardMarker? FailMarker => markers.FirstOrDefault(m => m.Source == MarkerSource.Fail);
-
         /// <summary>取り込み元になったリプレイの件数。0 なら未取り込み。</summary>
         [JsonProperty("importedReplays")]
         public int ImportedReplayCount { get; set; }
 
         /// <summary>
+        /// 取り込んだ中で最も新しいリプレイの時刻（UNIX 秒）。
+        /// 上限で件数が頭打ちになるため、再取り込みの要否は件数ではなくこれで判断する。
+        /// </summary>
+        [JsonProperty("importedLatest")]
+        public long ImportedLatestTimestamp { get; set; }
+
+        /// <summary>
         /// 自動取り込みの対象外にするか。手動で記録を全消しした譜面に立てる。
         /// </summary>
-        /// <remarks>
-        /// これを永続化しないと、消してもゲームを再起動した時点で自動取り込みが
-        /// 何事もなかったように戻してしまう。消したという意思のほうを残す。
-        /// </remarks>
         [JsonProperty("autoImportSuppressed")]
         public bool AutoImportSuppressed { get; set; }
 
+        /// <summary>カウントダウンの対象になっているフェイルマーカー。無ければ null。</summary>
+        [JsonIgnore]
+        public HazardMarker? ActiveFail =>
+            markers.FirstOrDefault(m => m.Source == MarkerSource.Fail && m.IsActive);
+
+        [JsonIgnore]
+        public int Count => markers.Count;
+
         /// <summary>
-        /// 実測した壁マーカーを追加する。閾値以内に既存の壁マーカーがあれば統合し、
-        /// より早い方の時刻を先頭として採用する。
-        /// 取り込みマーカーと重なった場合は、進入時刻が確かな実測で置き換える。
+        /// 実測した壁マーカーを追加する。
+        /// ほぼ同じ時刻の記録があればまとめ、取り込みマーカーなら実測で置き換える。
         /// </summary>
-        /// <returns>集合の内容が変化したら true。</returns>
-        public bool AddWall(float songTime, float thresholdSeconds)
+        public bool AddWall(float songTime)
         {
-            var existing = NearestWall(songTime, thresholdSeconds);
+            var existing = NearestSameSpot(songTime, MarkerSource.Wall);
             if (existing == null)
             {
                 Insert(new HazardMarker(songTime, MarkerSource.Wall));
                 return true;
             }
 
+            // 取り込みは実測に譲る。時刻は早い方を残す
             if (existing.Imported)
             {
-                // 取り込みマーカーは実測に譲る。件数は引き継がない。
-                // ただし時刻は早い方を残す。後ろへずらすと、その分だけ警告が遅れる
                 existing.SongTime = Math.Min(songTime, existing.SongTime);
                 existing.Imported = false;
                 existing.HitCount = 1;
-                Sort();
-                return true;
             }
-
-            existing.HitCount++;
-            if (songTime < existing.SongTime)
+            else
             {
-                existing.SongTime = songTime;
-                Sort();
+                existing.HitCount++;
+                if (songTime < existing.SongTime) existing.SongTime = songTime;
             }
+            Normalize();
             return true;
         }
 
         /// <summary>
         /// リプレイから取り込んだ壁マーカーを追加する。
-        /// 同じ地点に実測マーカーが既にあれば、そちらを信用して何もしない。
+        /// 同じ地点に実測マーカーがあれば、そちらを信用して何もしない。
         /// </summary>
-        public bool AddImportedWall(float songTime, float thresholdSeconds)
+        public bool AddImportedWall(float songTime)
         {
-            var existing = NearestWall(songTime, thresholdSeconds);
+            var existing = NearestSameSpot(songTime, MarkerSource.Wall);
             if (existing == null)
             {
                 Insert(new HazardMarker(songTime, MarkerSource.Wall, imported: true));
@@ -86,55 +101,44 @@ namespace HazardTimer.Markers
             if (!existing.Imported) return false;
 
             existing.HitCount++;
-            if (songTime < existing.SongTime)
-            {
-                existing.SongTime = songTime;
-                Sort();
-            }
+            if (songTime < existing.SongTime) existing.SongTime = songTime;
+            Normalize();
             return true;
         }
 
         /// <summary>
-        /// フェイル地点を設定する。1 譜面に 1 点しか持たないので既存があれば置き換える。
-        /// 取り込みは既存の実測を上書きしない。
+        /// フェイル地点を候補として追加する。
         /// </summary>
-        public bool SetFail(float songTime, bool imported = false)
+        /// <remarks>
+        /// 1 点に絞らず全部残す。どこまで到達できたかは試行ごとに違い、
+        /// どれを警告に使うかは利用者が選べた方がよい。
+        /// </remarks>
+        public bool AddFail(float songTime, bool imported = false)
         {
-            var existing = FailMarker;
+            var existing = NearestSameSpot(songTime, MarkerSource.Fail);
             if (existing != null)
             {
-                if (imported && !existing.Imported) return false;
-                if (Math.Abs(existing.SongTime - songTime) < 0.001f && existing.Imported == imported) return false;
-                markers.Remove(existing);
+                if (existing.Imported && !imported)
+                {
+                    existing.Imported = false;
+                    Normalize();
+                    return true;
+                }
+                return false;
             }
+
             Insert(new HazardMarker(songTime, MarkerSource.Fail, imported));
             return true;
         }
 
-        /// <summary>取り込みで作られたマーカーだけを消す。再取り込みの前処理。</summary>
-        public bool RemoveImported()
-        {
-            var removed = markers.RemoveAll(m => m.Imported) > 0;
-            if (removed || ImportedReplayCount != 0)
-            {
-                ImportedReplayCount = 0;
-                return true;
-            }
-            return false;
-        }
-
         /// <summary>
         /// 手動マーカーを追加する。ほぼ同じ時刻に既にあれば何もしない。
-        /// 手動指定は意図的な操作なので、壁のようなクラスタ統合は行わない。
         /// </summary>
         public bool AddManual(float songTime, string? label = null)
         {
             if (songTime < 0f) return false;
-            if (markers.Any(m => m.Source == MarkerSource.Manual
-                                 && Math.Abs(m.SongTime - songTime) < 0.05f))
-            {
-                return false;
-            }
+            if (NearestSameSpot(songTime, MarkerSource.Manual) != null) return false;
+
             Insert(new HazardMarker(songTime, MarkerSource.Manual)
             {
                 Label = string.IsNullOrWhiteSpace(label) ? null : label!.Trim(),
@@ -144,42 +148,21 @@ namespace HazardTimer.Markers
 
         /// <summary>
         /// そのマーカーを指定時刻へ動かしてよいか。
+        /// 同じ地点に別のマーカーが重なるのは防ぐ。
         /// </summary>
-        /// <remarks>
-        /// 追加時に効いている規則（壁はクラスタ閾値、手動はほぼ同時刻の重複禁止）は、
-        /// 編集でも同じように守る必要がある。ここを素通しにすると、
-        /// 閾値未満で並んだ壁マーカーが作れてしまい、設計 2.2 が防いでいる
-        /// 「カウントダウンの連続再発火」が編集経由で入り込む。
-        /// </remarks>
-        public bool CanMoveTo(HazardMarker marker, float songTime, float thresholdSeconds)
+        public bool CanMoveTo(HazardMarker marker, float songTime)
         {
             if (songTime < 0f || !markers.Contains(marker)) return false;
 
-            foreach (var other in markers)
-            {
-                if (ReferenceEquals(other, marker)) continue;
-
-                switch (marker.Source)
-                {
-                    case MarkerSource.Wall when other.Source == MarkerSource.Wall:
-                        if (Math.Abs(other.SongTime - songTime) < thresholdSeconds) return false;
-                        break;
-                    case MarkerSource.Manual when other.Source == MarkerSource.Manual:
-                        if (Math.Abs(other.SongTime - songTime) < 0.05f) return false;
-                        break;
-                }
-            }
-            return true;
+            return !markers.Any(other => !ReferenceEquals(other, marker)
+                                         && other.Source == marker.Source
+                                         && Math.Abs(other.SongTime - songTime) < SameSpotSeconds);
         }
 
         /// <summary>
-        /// 既存のマーカーの時刻と名前を書き換える。時刻が変わるので並べ直す。
+        /// 既存のマーカーの時刻と名前を書き換える。
+        /// 手を入れた時点で利用者の意思を表すものになるので、取り込み印を落とす。
         /// </summary>
-        /// <remarks>
-        /// 手を入れた時点でそのマーカーは利用者の意思を表すものになるので、
-        /// 取り込み印を落とす。落とさないと、次の自動取り込みで
-        /// <see cref="RemoveImported"/> の対象になり編集が消える。
-        /// </remarks>
         public bool Update(HazardMarker marker, float songTime, string? label)
         {
             if (songTime < 0f || !markers.Contains(marker)) return false;
@@ -187,53 +170,192 @@ namespace HazardTimer.Markers
             marker.SongTime = songTime;
             marker.Label = string.IsNullOrWhiteSpace(label) ? null : label!.Trim();
             marker.Imported = false;
-            Sort();
+            Normalize();
             return true;
         }
 
-        public bool Remove(HazardMarker marker) => markers.Remove(marker);
+        /// <summary>
+        /// そのマーカーを必ず使う指定にする。
+        /// 時刻が重なる他のマーカーは、押した時点で使わない指定に変える。
+        /// </summary>
+        /// <remarks>
+        /// 重なりの解消をこの操作の中でやってしまうのは、押した結果が
+        /// そのまま一覧に出るようにするため。判定の中で暗黙に潰すと、
+        /// なぜその表示になったのかが利用者から見えない。
+        /// </remarks>
+        public bool TurnOn(HazardMarker marker)
+        {
+            if (!markers.Contains(marker)) return false;
 
-        public bool RemoveAll(MarkerSource source) => markers.RemoveAll(m => m.Source == source) > 0;
+            var threshold = PluginConfig.Instance.ClusterThresholdSeconds;
+            foreach (var other in markers)
+            {
+                if (ReferenceEquals(other, marker)) continue;
+                if (Math.Abs(other.SongTime - marker.SongTime) < threshold)
+                {
+                    other.State = MarkerState.Off;
+                }
+            }
+
+            marker.State = MarkerState.On;
+            Normalize();
+            return true;
+        }
+
+        /// <summary>そのマーカーを使わない指定にする。消さずに残す。</summary>
+        public bool TurnOff(HazardMarker marker)
+        {
+            if (!markers.Contains(marker)) return false;
+
+            marker.State = MarkerState.Off;
+            Normalize();
+            return true;
+        }
+
+        public bool Remove(HazardMarker marker)
+        {
+            if (!markers.Remove(marker)) return false;
+            Normalize();
+            return true;
+        }
+
+        public bool RemoveAll(MarkerSource source)
+        {
+            if (markers.RemoveAll(m => m.Source == source) == 0) return false;
+            Normalize();
+            return true;
+        }
+
+        /// <summary>取り込みで作られたマーカーだけを消す。再取り込みの前処理。</summary>
+        public bool RemoveImported()
+        {
+            var removed = markers.RemoveAll(m => m.Imported) > 0;
+            if (!removed && ImportedReplayCount == 0) return false;
+
+            ImportedReplayCount = 0;
+            ImportedLatestTimestamp = 0;
+            Normalize();
+            return true;
+        }
 
         public bool Clear()
         {
             if (markers.Count == 0 && ImportedReplayCount == 0) return false;
             markers.Clear();
-            // 取り込み済みの印も消す。消した直後に再取り込みできる状態に戻す
             ImportedReplayCount = 0;
+            ImportedLatestTimestamp = 0;
             return true;
         }
 
-        [JsonIgnore]
-        public int Count => markers.Count;
-
-        /// <summary>閾値以内で最も近い既存の壁マーカー。無ければ null。</summary>
-        private HazardMarker? NearestWall(float songTime, float thresholdSeconds)
+        /// <summary>
+        /// カウントダウンの対象を決め直す。
+        /// </summary>
+        /// <remarks>
+        /// <list type="bullet">
+        /// <item>壁 … 近接したものを 1 つの危険地点とみなし、その<b>先頭</b>を採る。
+        /// 警告は最初の接触より前に出す必要があるため。</item>
+        /// <item>フェイル … <b>最も遅い</b>ものを採る。到達点が一番奥のところが今の壁であり、
+        /// 手前で落ちた記録は既に通過できているため。</item>
+        /// <item>手動 … 実際に記録された地点と重なるならそちらへ譲る。重ならなければ対象。</item>
+        /// </list>
+        /// 指定（<see cref="HazardMarker.Pinned"/>）があればそちらを優先する。
+        /// </remarks>
+        public void RecomputeActive()
         {
-            HazardMarker? best = null;
-            var bestDistance = thresholdSeconds;
-            foreach (var m in markers)
+            var threshold = PluginConfig.Instance.ClusterThresholdSeconds;
+
+            foreach (var marker in markers)
             {
-                if (m.Source != MarkerSource.Wall) continue;
-                var distance = Math.Abs(m.SongTime - songTime);
-                if (distance < bestDistance)
-                {
-                    bestDistance = distance;
-                    best = m;
-                }
+                marker.IsActive = marker.State == MarkerState.On;
             }
-            return best;
+
+            var fails = Automatic(MarkerSource.Fail, threshold);
+            if (fails.Count > 0)
+            {
+                Choose(fails, byLatest: true).IsActive = true;
+            }
+
+            foreach (var group in WallGroups())
+            {
+                Choose(group, byLatest: false).IsActive = true;
+            }
+
+            // 手動は最後に決める。実測や取り込みで同じ地点が記録されているなら、
+            // 手で置いた見当より実際の記録の方が確かなので譲る。
+            // 記録が消えていた頃に手当てとして置いたものが、記録の復活後も
+            // 二重に残り続けるのを防ぐ
+            foreach (var manual in Automatic(MarkerSource.Manual, threshold))
+            {
+                manual.IsActive = !markers.Any(other => other.Source != MarkerSource.Manual
+                                                        && other.IsActive
+                                                        && Math.Abs(other.SongTime - manual.SongTime) < threshold);
+            }
         }
+
+        /// <summary>
+        /// 自動選択の対象になるマーカー。
+        /// 指定なしのもののうち、必ず使う指定と重なっていないものだけ。
+        /// </summary>
+        private List<HazardMarker> Automatic(MarkerSource source, float thresholdSeconds)
+            => markers.Where(m => m.Source == source
+                                  && m.State == MarkerState.Auto
+                                  && !HasForcedOnNear(m, thresholdSeconds))
+                      .ToList();
+
+        private bool HasForcedOnNear(HazardMarker marker, float thresholdSeconds)
+            => markers.Any(other => !ReferenceEquals(other, marker)
+                                    && other.State == MarkerState.On
+                                    && Math.Abs(other.SongTime - marker.SongTime) < thresholdSeconds);
+
+        /// <summary>読み込み直後や編集後に、順序と対象を整える。</summary>
+        internal void Normalize()
+        {
+            markers.Sort((a, b) => a.SongTime.CompareTo(b.SongTime));
+            RecomputeActive();
+        }
+
+        /// <summary>そのマーカーと同じ危険地点として扱われる仲間（自分を含む）。</summary>
+        private IEnumerable<HazardMarker> GroupOf(HazardMarker marker) => marker.Source switch
+        {
+            MarkerSource.Fail => markers.Where(m => m.Source == MarkerSource.Fail),
+            MarkerSource.Wall => WallGroups().FirstOrDefault(g => g.Contains(marker))
+                                 ?? new List<HazardMarker> { marker },
+            _ => new List<HazardMarker> { marker },
+        };
+
+        /// <summary>
+        /// 壁マーカーを危険地点ごとにまとめる。
+        /// 判定は「直前のマーカーからの間隔」で連鎖させる（設計 2.2）。
+        /// </summary>
+        private List<List<HazardMarker>> WallGroups()
+        {
+            var threshold = PluginConfig.Instance.ClusterThresholdSeconds;
+            var walls = Automatic(MarkerSource.Wall, threshold);
+            var groups = new List<List<HazardMarker>>();
+
+            var index = 0;
+            while (index < walls.Count)
+            {
+                var end = index + 1;
+                while (end < walls.Count && walls[end].SongTime - walls[end - 1].SongTime < threshold) end++;
+                groups.Add(walls.GetRange(index, end - index));
+                index = end;
+            }
+            return groups;
+        }
+
+        private static HazardMarker Choose(List<HazardMarker> group, bool byLatest)
+            => byLatest ? group[group.Count - 1] : group[0];
+
+        /// <summary>同じ地点の記録とみなせる既存マーカー。無ければ null。</summary>
+        private HazardMarker? NearestSameSpot(float songTime, MarkerSource source)
+            => markers.FirstOrDefault(m => m.Source == source
+                                           && Math.Abs(m.SongTime - songTime) < SameSpotSeconds);
 
         private void Insert(HazardMarker marker)
         {
             markers.Add(marker);
-            Sort();
+            Normalize();
         }
-
-        private void Sort() => markers.Sort((a, b) => a.SongTime.CompareTo(b.SongTime));
-
-        /// <summary>読み込み直後に順序を保証する（手書き編集されたファイルへの保険）。</summary>
-        internal void Normalize() => Sort();
     }
 }

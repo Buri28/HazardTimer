@@ -27,7 +27,9 @@ namespace HazardTimer.UI
                 GameplaySetup.Instance.AddTab(ManualMarkerController.TabName,
                                               ManualMarkerController.Resource,
                                               manualMarkerController,
-                                              MenuType.Solo));
+                                              // Solo だけにするとキャンペーンや Custom
+                                              // （AccSaber など）でタブが出ない
+                                              MenuType.All));
 
             if (tabRegistered) Plugin.Log?.Info("Menu UI registered");
         }

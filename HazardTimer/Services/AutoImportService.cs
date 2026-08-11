@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using HazardTimer.Markers;
 using HazardTimer.Replay;
@@ -50,6 +50,37 @@ namespace HazardTimer.Services
             // プレイ直後に戻ってきたときの「今まさに選ばれている譜面」がそれなので、
             // ここで拾い直さないと、いま遊んだ譜面だけが取り込まれない
             OnSelectionChanged();
+
+            ImportLastPlayed();
+        }
+
+        /// <summary>
+        /// 直前に遊んだ譜面を取り込む。
+        /// </summary>
+        /// <remarks>
+        /// MOD 独自の選曲画面から遊んだ場合、曲を選んだ時点では譜面が分からず
+        /// 自動取り込みが働かない。遊んだ事実だけは残るので、メニューへ戻ったここで拾う。
+        /// プレイ中ではないので、解析の重さがフレームレートに響かない。
+        /// </remarks>
+        private void ImportLastPlayed()
+        {
+            if (!PluginConfig.Instance.AutoImportReplays) return;
+
+            var key = HazardMarkerSession.LastPlayedBeatmapKey;
+            if (!key.HasValue) return;
+            if (Suppressed.Contains(BeatmapMarkerKey.From(key.Value))) return;
+            if (ReplayImportService.CountAvailable(key.Value) == 0) return;
+
+            var set = MarkerStore.Instance.GetOrCreate(key.Value);
+            if (set.AutoImportSuppressed) return;
+            if (!ReplayImportService.NeedsImport(key.Value, set)) return;
+
+            var result = ReplayImportService.Import(key.Value, set);
+            if (result.ReplayCount == 0) return;
+
+            MarkerStore.Instance.MarkDirty();
+            Flush();
+            Plugin.Log?.Info($"Imported {result.ReplayCount} replay(s) for the beatmap just played.");
         }
 
         public void Dispose()
@@ -74,8 +105,7 @@ namespace HazardTimer.Services
             if (set.AutoImportSuppressed) return;
             if (!ReplayImportService.NeedsImport(key.Value, set)) return;
 
-            var result = ReplayImportService.Import(key.Value, set,
-                                                    PluginConfig.Instance.ClusterThresholdSeconds);
+            var result = ReplayImportService.Import(key.Value, set);
             if (result.ReplayCount == 0) return;
 
             MarkerStore.Instance.MarkDirty();
@@ -93,3 +123,4 @@ namespace HazardTimer.Services
         }
     }
 }
+

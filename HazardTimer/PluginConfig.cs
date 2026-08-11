@@ -32,6 +32,16 @@ namespace HazardTimer
         /// </summary>
         public virtual bool AutoImportReplays { get; set; } = true;
 
+        /// <summary>
+        /// 1 譜面あたり何件のリプレイまで読むか。新しいものから数える。
+        /// </summary>
+        /// <remarks>
+        /// 何百回も遊んだ譜面では全部読むと重く、マーカーも増えすぎる。
+        /// 中身を読まないとフェイル時刻が分からないので、絞り込みに使えるのは
+        /// ファイル名の時刻だけ。新しいものほど今の実力を表すので、その順で採る。
+        /// </remarks>
+        public virtual int MaxImportReplays { get; set; } = 10;
+
         public virtual float CounterXOffset { get; set; } = 0.0f;
         public virtual float CounterYOffset { get; set; } = 0.0f;
     }

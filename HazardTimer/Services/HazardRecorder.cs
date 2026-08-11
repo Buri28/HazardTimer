@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using Zenject;
 
 namespace HazardTimer.Services
@@ -26,10 +26,12 @@ namespace HazardTimer.Services
         private EnergySimulator? energySimulator;
 
         /// <summary>
-        /// 直前の接触イベントの時刻。クラスタ判定は「マーカーの先頭」ではなく
-        /// 「直前のイベント」からの間隔で行う（2.2）。長い壁が吐く連続イベントも
-        /// 必ず閾値未満で並ぶので、同じ仕組みで再発火が防がれる。
+        /// 同じ接触を何度も記録しないための最小間隔。
+        /// 長い壁の中では接触判定が断続的に立つことがある。
         /// </summary>
+        private const float MinimumEventGapSeconds = 0.25f;
+
+        /// <summary>直前の接触イベントの時刻。</summary>
         private float lastObstacleEventTime = float.NegativeInfinity;
 
         public void Initialize()
@@ -124,15 +126,13 @@ namespace HazardTimer.Services
             if (set == null) return;
 
             var songTime = audioTimeSyncController.songTime;
-            var threshold = PluginConfig.Instance.ClusterThresholdSeconds;
 
-            // 直前のイベントから閾値未満なら同じクラスタ。先頭は既に記録済みなので何もしない
-            var withinCluster = songTime - lastObstacleEventTime < threshold;
+            // 同じ壁の中で毎フレーム記録しないよう、ごく短い間隔だけ弾く。
+            // 近接した記録をどう扱うか（どれを警告に使うか）は集合側が決める
+            if (songTime - lastObstacleEventTime < MinimumEventGapSeconds) return;
             lastObstacleEventTime = songTime;
-            if (withinCluster) return;
 
-            // 過去のプレイで記録済みの近接マーカーとは、集合側で統合される
-            if (set.AddWall(songTime, threshold))
+            if (set.AddWall(songTime))
             {
                 session.NotifyChanged();
             }
@@ -145,7 +145,7 @@ namespace HazardTimer.Services
             var set = session.Markers;
             if (set == null) return;
 
-            if (set.SetFail(audioTimeSyncController.songTime))
+            if (set.AddFail(audioTimeSyncController.songTime))
             {
                 session.NotifyChanged();
             }
@@ -170,3 +170,4 @@ namespace HazardTimer.Services
         }
     }
 }
+

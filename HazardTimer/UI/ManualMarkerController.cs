@@ -41,6 +41,15 @@ namespace HazardTimer.UI
         /// </summary>
         private const string RefreshValuesEvent = "cancel";
 
+        /// <summary>カウントダウンに使われるマーカーの色。</summary>
+        private const string ActiveColor = "#7CFC00";
+
+        /// <summary>同じ危険地点の記録だが、カウントダウンには使われないものの色。</summary>
+        private const string InactiveColor = "#909090";
+
+        /// <summary>利用者が明示的に無効にしたものの色。</summary>
+        private const string DisabledColor = "#585858";
+
         /// <summary>一覧に出している順のマーカー。選択位置と対応させる。</summary>
         private readonly List<HazardMarker> listed = new List<HazardMarker>();
 
@@ -154,6 +163,13 @@ namespace HazardTimer.UI
             set => PluginConfig.Instance.AutoImportReplays = value;
         }
 
+        [UIValue("max-import-replays")]
+        public int MaxImportReplays
+        {
+            get => PluginConfig.Instance.MaxImportReplays;
+            set => PluginConfig.Instance.MaxImportReplays = value;
+        }
+
         [UIValue("FormatSeconds")]
         public string FormatSeconds(float value) => $"{value:F1} s";
 
@@ -178,6 +194,52 @@ namespace HazardTimer.UI
                 parserParams?.EmitEvent(RefreshValuesEvent);
             }
             RefreshStatus();
+        }
+
+        /// <summary>
+        /// 選択中のマーカーを必ず使う指定にする。時刻が重なるものは使わない指定になる。
+        /// </summary>
+        [UIAction("turn-on")]
+        public void TurnOnSelected()
+        {
+            var set = CurrentSet();
+            if (set == null) return;
+
+            var marker = selectedMarker;
+            if (marker == null)
+            {
+                actionMessage = "Select a marker to turn on";
+                RefreshStatus();
+                return;
+            }
+
+            actionMessage = set.TurnOn(marker)
+                ? $"On: {FormatTime(marker.SongTime)}"
+                : "Could not change the marker";
+            Persist();
+            Refresh();
+        }
+
+        /// <summary>選択中のマーカーを、消さずに使わない指定にする。</summary>
+        [UIAction("turn-off")]
+        public void TurnOffSelected()
+        {
+            var set = CurrentSet();
+            if (set == null) return;
+
+            var marker = selectedMarker;
+            if (marker == null)
+            {
+                actionMessage = "Select a marker to turn off";
+                RefreshStatus();
+                return;
+            }
+
+            actionMessage = set.TurnOff(marker)
+                ? $"Off: {FormatTime(marker.SongTime)}"
+                : "Could not change the marker";
+            Persist();
+            Refresh();
         }
 
         [UIAction("delete-selected")]
@@ -228,7 +290,7 @@ namespace HazardTimer.UI
             }
 
             var newTime = ResolveEditedTime(marker);
-            if (!set.CanMoveTo(marker, newTime, PluginConfig.Instance.ClusterThresholdSeconds))
+            if (!set.CanMoveTo(marker, newTime))
             {
                 actionMessage = "Too close to another marker";
                 RefreshStatus();
@@ -299,8 +361,7 @@ namespace HazardTimer.UI
             }
 
             var set = MarkerStore.Instance.GetOrCreate(key.Value);
-            var result = ReplayImportService.Import(key.Value, set,
-                                                    PluginConfig.Instance.ClusterThresholdSeconds);
+            var result = ReplayImportService.Import(key.Value, set);
 
             if (result.ReplayCount == 0)
             {
@@ -390,13 +451,32 @@ namespace HazardTimer.UI
             markerList.Data.Clear();
             foreach (var marker in listed)
             {
-                var origin = marker.Imported ? "Imported" : "Measured";
-                var source = marker.Source == MarkerSource.Manual ? "Manual" : origin;
+                // 種別は必ず出す。ラベルは自由に付けられるので、
+                // 手動マーカーに FAIL と名付けると本物のフェイルと見分けが付かなくなる
                 var hits = marker.HitCount > 1 ? $" x{marker.HitCount}" : string.Empty;
+                var source = marker.Source == MarkerSource.Manual
+                    ? "Manual"
+                    : $"{marker.Source} / {(marker.Imported ? "Imported" : "Measured")}";
+
+                // カウントダウンに使われる 1 つを色で示す。
+                // 近接した記録は全部残しているので、どれが選ばれたのか見えないと選び直せない。
+                // 色を付けられるのは本文だけ。サブテキストはリッチテキストが効かず、
+                // タグがそのまま表示されてしまう
+                var color = marker.State == MarkerState.Off ? DisabledColor
+                          : marker.IsActive ? ActiveColor
+                          : InactiveColor;
+
+                // 自動で選ばれたのか指定したのかが分かるようにする
+                var state = marker.State switch
+                {
+                    MarkerState.On => " / On",
+                    MarkerState.Off => " / Off",
+                    _ => string.Empty,
+                };
 
                 markerList.Data.Add(new CustomListTableData.CustomCellInfo(
-                    $"{FormatTime(marker.SongTime)}  {marker.DisplayLabel}",
-                    $"{source}{hits}"));
+                    $"<color={color}>{FormatTime(marker.SongTime)}  {marker.DisplayLabel}</color>",
+                    $"{source}{hits}{state}"));
             }
 
             markerList.TableView.ReloadData();
@@ -458,4 +538,6 @@ namespace HazardTimer.UI
         }
     }
 }
+
+
 

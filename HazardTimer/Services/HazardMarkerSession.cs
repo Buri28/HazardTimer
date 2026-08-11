@@ -18,6 +18,17 @@ namespace HazardTimer.Services
         private BeatmapMarkerSet? markerSet;
         private bool changed;
 
+        /// <summary>
+        /// 直前にプレイした譜面。メニューへ戻ったときの取り込み対象に使う。
+        /// </summary>
+        /// <remarks>
+        /// MOD 独自の選曲画面（AccSaber のキャンペーンなど）では選択中の譜面を追えないので、
+        /// 曲選択時の自動取り込みが働かない。プレイ開始時に取り込むのは
+        /// FPS 半減の判定に触れるので避けたい。
+        /// 実際に遊んだ譜面だけはここで覚えておき、メニューに戻ってから取り込む。
+        /// </remarks>
+        public static BeatmapKey? LastPlayedBeatmapKey { get; private set; }
+
         /// <summary>現在の譜面のマーカー集合。初期化前は null。</summary>
         public BeatmapMarkerSet? Markers => markerSet;
 
@@ -32,9 +43,12 @@ namespace HazardTimer.Services
                 return;
             }
 
+            LastPlayedBeatmapKey = sceneSetupData.beatmapKey;
             markerSet = MarkerStore.Instance.GetOrCreate(sceneSetupData.beatmapKey);
 
-            // 自動取り込みで溜まった未保存ぶんを、プレイに入る前に確定させる
+            // 自動取り込みで溜まった未保存ぶんを、プレイに入る前に確定させる。
+            // ここでリプレイの解析はしない。プレイ開始直後は FPS 半減の判定が入るため、
+            // 少しでも重い処理を挟むとフレームレートが落ちたまま固定されてしまう
             MarkerStore.Instance.Save();
         }
 

@@ -37,6 +37,22 @@ namespace HazardTimer.Markers
         public bool Imported { get; set; }
 
         /// <summary>
+        /// カウントダウンに使うかどうかの指定。既定は自動選択。
+        /// </summary>
+        /// <remarks>
+        /// 近接したマーカーは 1 つの危険地点として扱い、その中の 1 つだけを使う。
+        /// 自動で選んだ結果が意図と違うときに、利用者が上書きするためのもの。
+        /// </remarks>
+        [JsonProperty("state")]
+        public MarkerState State { get; set; } = MarkerState.Auto;
+
+        /// <summary>
+        /// カウントダウンの対象か。<see cref="BeatmapMarkerSet.RecomputeActive"/> が決めるので保存しない。
+        /// </summary>
+        [JsonIgnore]
+        public bool IsActive { get; internal set; }
+
+        /// <summary>
         /// 表示に使う名前。空なら種別から決まる既定の文字列（WALL / FAIL / MARK）を使う。
         /// </summary>
         /// <remarks>

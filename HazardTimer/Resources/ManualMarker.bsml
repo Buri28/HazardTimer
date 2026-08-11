@@ -69,6 +69,12 @@
           <button text='Add' on-click='add-marker' pref-width='22'
                   hover-hint='Add a new marker with these values.'/>
         </horizontal>
+        <horizontal spacing='1'>
+          <button text='Turn On' on-click='turn-on' pref-width='34'
+                  hover-hint='Always count down to this marker. Markers at a nearby time are turned off.'/>
+          <button text='Turn Off' on-click='turn-off' pref-width='34'
+                  hover-hint='Stop using this marker without deleting it.'/>
+        </horizontal>
       </vertical>
 
     </vertical>
@@ -125,6 +131,15 @@
         text='Auto Import Replays'
         hover-hint='Import from your local replays when a beatmap is selected. No network access.'
         value='auto-import-replays'
+        apply-on-change='true'
+        bind-value='true'/>
+
+      <increment-setting
+        text='Max Import Replays'
+        hover-hint='How many replays to read per beatmap, newest first.'
+        value='max-import-replays'
+        integer-only='true'
+        min='1' max='50' increment='1'
         apply-on-change='true'
         bind-value='true'/>
 
