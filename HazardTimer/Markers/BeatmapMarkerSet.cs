@@ -168,10 +168,7 @@ namespace HazardTimer.Markers
             if (songTime < 0f) return false;
             if (NearestSameSpot(songTime, MarkerSource.Manual) != null) return false;
 
-            Insert(new HazardMarker(songTime, MarkerSource.Manual)
-            {
-                Label = string.IsNullOrWhiteSpace(label) ? null : label!.Trim(),
-            });
+            Insert(new HazardMarker(songTime, MarkerSource.Manual) { Label = CleanLabel(label) });
             return true;
         }
 
@@ -197,8 +194,9 @@ namespace HazardTimer.Markers
             if (songTime < 0f || !markers.Contains(marker)) return false;
 
             marker.SongTime = songTime;
-            marker.Label = string.IsNullOrWhiteSpace(label) ? null : label!.Trim();
+            marker.Label = CleanLabel(label);
             marker.Imported = false;
+            marker.UserTouched = true;
             Normalize();
             return true;
         }
@@ -227,10 +225,14 @@ namespace HazardTimer.Markers
                     ? other.Source == MarkerSource.Fail
                     : Math.Abs(other.SongTime - marker.SongTime) < threshold;
 
-                if (competes) other.State = MarkerState.Off;
+                if (!competes) continue;
+
+                other.State = MarkerState.Off;
+                other.UserTouched = true;
             }
 
             marker.State = MarkerState.On;
+            marker.UserTouched = true;
             Normalize();
             return true;
         }
@@ -249,12 +251,16 @@ namespace HazardTimer.Markers
 
             var wasActive = marker.IsActive;
             marker.State = MarkerState.Off;
+            marker.UserTouched = true;
 
             if (wasActive)
             {
-                foreach (var member in SameHazard(marker))
+                foreach (var member in Competitors(marker))
                 {
-                    if (member.State == MarkerState.Auto) member.State = MarkerState.Off;
+                    if (member.State != MarkerState.Auto) continue;
+
+                    member.State = MarkerState.Off;
+                    member.UserTouched = true;
                 }
             }
 
@@ -267,13 +273,23 @@ namespace HazardTimer.Markers
         {
             if (markers.Count == 0) return false;
 
-            foreach (var marker in markers) marker.State = MarkerState.Off;
+            foreach (var marker in markers)
+            {
+                marker.State = MarkerState.Off;
+                marker.UserTouched = true;
+            }
             Normalize();
             return true;
         }
 
-        /// <summary>同じ危険地点として扱われる仲間（自分は含まない）。</summary>
-        private IEnumerable<HazardMarker> SameHazard(HazardMarker marker)
+        /// <summary>
+        /// 同じ表示枠を奪い合う相手（自分は含まない）。
+        /// </summary>
+        /// <remarks>
+        /// <see cref="TurnOn"/> が押した時点で黙らせる相手と同じ範囲にする。
+        /// ここを種別で絞ると、壁を外したときに近くの手動マーカーが繰り上がって点く。
+        /// </remarks>
+        private IEnumerable<HazardMarker> Competitors(HazardMarker marker)
         {
             if (marker.Source == MarkerSource.Fail)
             {
@@ -281,14 +297,10 @@ namespace HazardTimer.Markers
                                           && !ReferenceEquals(m, marker));
             }
 
-            if (marker.Source == MarkerSource.Wall || marker.Source == MarkerSource.Miss)
-            {
-                var group = GroupsOf(marker.Source).FirstOrDefault(g => g.Contains(marker));
-                return group?.Where(m => !ReferenceEquals(m, marker))
-                       ?? Enumerable.Empty<HazardMarker>();
-            }
-
-            return Enumerable.Empty<HazardMarker>();
+            var threshold = PluginConfig.Instance.ClusterThresholdSeconds;
+            return markers.Where(m => !ReferenceEquals(m, marker)
+                                      && SharesSlot(marker, m)
+                                      && Math.Abs(m.SongTime - marker.SongTime) < threshold);
         }
 
         public bool Remove(HazardMarker marker)
@@ -314,7 +326,11 @@ namespace HazardTimer.Markers
         /// </remarks>
         public bool RemoveImported()
         {
-            var removed = markers.RemoveAll(m => m.Imported && m.State == MarkerState.Auto) > 0;
+            var removed = markers.RemoveAll(m => m.Imported && !m.UserTouched) > 0;
+
+            // 残したものは、この取り込みで数え直す。
+            // そうしないと再取り込みのたびに回数が積み上がる
+            foreach (var marker in markers.Where(m => m.Imported)) marker.HitCount = 0;
             if (!removed && ImportedReplayCount == 0) return false;
 
             ImportedReplayCount = 0;
@@ -350,42 +366,59 @@ namespace HazardTimer.Markers
         {
             var threshold = PluginConfig.Instance.ClusterThresholdSeconds;
 
-            foreach (var marker in markers)
-            {
-                marker.IsActive = marker.State == MarkerState.On;
-            }
+            foreach (var marker in markers) marker.IsActive = false;
 
-            // フェイルは距離に関係なく全部で 1 グループ。指定があればそれで決まり
-            var fails = markers.Where(m => m.Source == MarkerSource.Fail).ToList();
-            if (fails.Count > 0 && !fails.Any(m => m.State == MarkerState.On))
-            {
-                var candidates = fails.Where(m => m.State == MarkerState.Auto).ToList();
-                if (candidates.Count > 0) candidates[candidates.Count - 1].IsActive = true;
-            }
+            // フェイルは距離に関係なく全部で 1 グループ
+            ActivateOne(markers.Where(m => m.Source == MarkerSource.Fail).ToList(), byLatest: true);
 
             // 壁とミスは同じ表示枠だが、危険地点のまとめ方は種別ごとに独立させる
             foreach (var source in new[] { MarkerSource.Wall, MarkerSource.Miss })
             {
-                foreach (var group in GroupsOf(source))
-                {
-                    if (group.Any(m => m.State == MarkerState.On)) continue;
-
-                    var candidates = group.Where(m => m.State == MarkerState.Auto).ToList();
-                    if (candidates.Count > 0) candidates[0].IsActive = true;
-                }
+                foreach (var group in GroupsOf(source)) ActivateOne(group, byLatest: false);
             }
 
             // 手動は最後に決める。実測や取り込みで同じ地点が記録されているなら、
             // 手で置いた見当より実際の記録の方が確かなので譲る。
             // 記録が消えていた頃に手当てとして置いたものが、記録の復活後も
             // 二重に残り続けるのを防ぐ
-            foreach (var manual in markers.Where(m => m.Source == MarkerSource.Manual
-                                                      && m.State == MarkerState.Auto))
+            foreach (var manual in markers.Where(m => m.Source == MarkerSource.Manual))
             {
-                manual.IsActive = !markers.Any(other => other.Source == MarkerSource.Wall
+                if (manual.State == MarkerState.Off) continue;
+                if (manual.State == MarkerState.On)
+                {
+                    manual.IsActive = true;
+                    continue;
+                }
+
+                manual.IsActive = !markers.Any(other => (other.Source == MarkerSource.Wall
+                                                         || other.Source == MarkerSource.Miss)
                                                         && other.IsActive
                                                         && Math.Abs(other.SongTime - manual.SongTime) < threshold);
             }
+        }
+
+        /// <summary>
+        /// グループの中から 1 つだけを対象にする。
+        /// </summary>
+        /// <remarks>
+        /// 使う指定が複数あっても 1 つに絞る。取り込みと利用者の指定が同じ危険地点で
+        /// 重なることがあり、そのまま両方を対象にすると 1 つの地点に警告が 2 回出る。
+        /// </remarks>
+        private static void ActivateOne(List<HazardMarker> group, bool byLatest)
+        {
+            if (group.Count == 0) return;
+
+            var forced = group.FirstOrDefault(m => m.State == MarkerState.On);
+            if (forced != null)
+            {
+                forced.IsActive = true;
+                return;
+            }
+
+            var candidates = group.Where(m => m.State == MarkerState.Auto).ToList();
+            if (candidates.Count == 0) return;
+
+            (byLatest ? candidates[candidates.Count - 1] : candidates[0]).IsActive = true;
         }
 
         /// <summary>
@@ -431,8 +464,20 @@ namespace HazardTimer.Markers
             return groups;
         }
 
-        private static HazardMarker Choose(List<HazardMarker> group, bool byLatest)
-            => byLatest ? group[group.Count - 1] : group[0];
+        /// <summary>
+        /// 表示名を整える。空白だけなら既定に戻し、山括弧は落とす。
+        /// </summary>
+        /// <remarks>
+        /// カウンターは 1 行ごとに色を付けるためリッチテキストで描いている。
+        /// 名前に山括弧が混ざるとタグとして解釈され、行の途中から色が崩れる。
+        /// </remarks>
+        private static string? CleanLabel(string? label)
+        {
+            if (string.IsNullOrWhiteSpace(label)) return null;
+
+            var cleaned = label!.Replace("<", string.Empty).Replace(">", string.Empty).Trim();
+            return cleaned.Length == 0 ? null : cleaned;
+        }
 
         /// <summary>同じ地点の記録とみなせる既存マーカー。無ければ null。</summary>
         private HazardMarker? NearestSameSpot(float songTime, MarkerSource source)

@@ -47,6 +47,17 @@ namespace HazardTimer.Markers
         public MarkerState State { get; set; } = MarkerState.Auto;
 
         /// <summary>
+        /// 利用者が手を入れたか。
+        /// </summary>
+        /// <remarks>
+        /// <see cref="State"/> だけでは「取り込みが決めた指定」と「利用者が決めた指定」を
+        /// 区別できない。ミス地点は取り込みが必ず On か Off を付けるため、
+        /// 状態で判断すると再取り込みで作り直せなくなり、古い集計が残り続ける。
+        /// </remarks>
+        [JsonProperty("userTouched")]
+        public bool UserTouched { get; set; }
+
+        /// <summary>
         /// カウントダウンの対象か。<see cref="BeatmapMarkerSet.RecomputeActive"/> が決めるので保存しない。
         /// </summary>
         [JsonIgnore]
