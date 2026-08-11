@@ -95,7 +95,7 @@ namespace HazardTimer.UI
         /// </remarks>
         private void OnPolled()
         {
-            var set = CurrentSet();
+            var set = CurrentSetIfAny();
             var version = set?.Version ?? -1;
             if (version == renderedVersion) return;
 
@@ -153,7 +153,13 @@ namespace HazardTimer.UI
         public float ClusterThresholdSeconds
         {
             get => PluginConfig.Instance.ClusterThresholdSeconds;
-            set => PluginConfig.Instance.ClusterThresholdSeconds = value;
+            set
+            {
+                PluginConfig.Instance.ClusterThresholdSeconds = value;
+                // どれを 1 つの危険地点とみなすかが変わるので、判定をやり直す。
+                // やらないと、次に何か編集するまで古い判定のまま使われる
+                MarkerStore.Instance.RecomputeAll();
+            }
         }
 
         [UIValue("record-wall-hits")]
@@ -440,16 +446,30 @@ namespace HazardTimer.UI
         {
             actionMessage = null;
             selectedMarker = null;
-            // 前の譜面のマーカーから読み込んだ値が残っていると、
-            // そのまま Add を押したときに打ち込んでいない時刻で追加されてしまう
-            ClearInputs();
+
+            // 譜面が変わったときだけ入力欄を捨てる。
+            // 画面遷移で一時的に譜面を見失うことがあり、そこで消すと打ち込んだ値が飛ぶ。
+            // 別の譜面に移った場合は、打ち込んでいない時刻で Add できてしまうので消す
+            if (SelectedBeatmapTracker.Current.HasValue) ClearInputs();
+
             Refresh();
         }
 
+        /// <summary>編集対象の集合。無ければ作る。書き換える操作から呼ぶ。</summary>
         private static BeatmapMarkerSet? CurrentSet()
         {
             var key = SelectedBeatmapTracker.Current;
             return key.HasValue ? MarkerStore.Instance.GetOrCreate(key.Value) : null;
+        }
+
+        /// <summary>
+        /// 表示用の集合。存在しなければ作らずに null を返す。
+        /// 定期的に呼ばれるので、曲を眺めただけの譜面を辞書に残さない。
+        /// </summary>
+        private static BeatmapMarkerSet? CurrentSetIfAny()
+        {
+            var key = SelectedBeatmapTracker.Current;
+            return key.HasValue ? MarkerStore.Instance.Find(key.Value) : null;
         }
 
         /// <summary>一覧と状態表示をまとめて作り直す。</summary>
@@ -463,7 +483,7 @@ namespace HazardTimer.UI
         {
             listed.Clear();
 
-            var set = CurrentSet();
+            var set = CurrentSetIfAny();
             if (set != null) listed.AddRange(set.Markers);
             renderedVersion = set?.Version ?? -1;
 
@@ -524,7 +544,7 @@ namespace HazardTimer.UI
         /// </summary>
         private void RefreshStatus()
         {
-            var set = CurrentSet();
+            var set = CurrentSetIfAny();
             if (set == null)
             {
                 SetStatus("No beatmap selected");

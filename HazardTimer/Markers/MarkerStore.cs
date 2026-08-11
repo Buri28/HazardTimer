@@ -36,6 +36,35 @@ namespace HazardTimer.Markers
         /// </summary>
         public BeatmapMarkerSet GetOrCreate(BeatmapKey key) => GetOrCreate(BeatmapMarkerKey.From(key));
 
+        /// <summary>
+        /// 譜面に対応するマーカー集合を返す。無ければ null。作りはしない。
+        /// </summary>
+        /// <remarks>
+        /// 表示の更新のように読むだけの用途で <see cref="GetOrCreate"/> を使うと、
+        /// 曲を眺めただけの譜面まで辞書に残り続ける。
+        /// </remarks>
+        public BeatmapMarkerSet? Find(BeatmapKey key)
+        {
+            lock (gate)
+            {
+                EnsureLoaded();
+                return sets.TryGetValue(BeatmapMarkerKey.From(key), out var set) ? set : null;
+            }
+        }
+
+        /// <summary>
+        /// 読み込み済みの全集合で、カウントダウンの対象を決め直す。
+        /// 統合閾値を変えたときのように、判定の前提が変わったときに呼ぶ。
+        /// </summary>
+        public void RecomputeAll()
+        {
+            lock (gate)
+            {
+                EnsureLoaded();
+                foreach (var set in sets.Values) set.Normalize();
+            }
+        }
+
         public BeatmapMarkerSet GetOrCreate(string key)
         {
             lock (gate)

@@ -40,6 +40,9 @@ namespace HazardTimer.Services
         /// <summary>この巡回で探索を許すか。1 巡につき 1 回だけ判定する。</summary>
         private bool scanning;
 
+        /// <summary>この巡回で実際に探索したか。待ち時間を消費するかの判断に使う。</summary>
+        private bool scanned;
+
         [Inject] private readonly DiContainer container = null!;
 
         /// <summary>
@@ -114,8 +117,25 @@ namespace HazardTimer.Services
 
         private void UpdateSelection()
         {
-            scanning = ShouldScan();
+            // 走査してよいかは 1 巡につき 1 回だけ決める。3 種類の探索が
+            // 互いの待ち時間を食い合わないようにするため
+            scanning = Time.unscaledTime >= nextScanTime;
+            scanned = false;
 
+            try
+            {
+                TakeSelection();
+            }
+            finally
+            {
+                // 実際に走査したときだけ待ち時間を進める。掴めている間に進めると、
+                // 使えなくなった瞬間に待ち時間の残りを食らって最大 2 秒ほど譜面を見失う
+                if (scanned) nextScanTime = Time.unscaledTime + RescanBackoffSeconds;
+            }
+        }
+
+        private void TakeSelection()
+        {
             // 譜面そのものを持っている詳細画面を優先し、無ければ 1 つ上の階層を見る
             var fromDetail = FindDetailView();
             if (fromDetail != null && TryTake(fromDetail.beatmapKey, fromDetail.beatmapLevel)) return;
@@ -138,6 +158,8 @@ namespace HazardTimer.Services
             if (!IsUsable(leaderboard))
             {
                 if (!scanning) return null;
+
+                scanned = true;
                 leaderboard = FindActive<PlatformLeaderboardViewController>();
             }
             if (leaderboard == null) return null;
@@ -153,23 +175,12 @@ namespace HazardTimer.Services
             }
         }
 
-        /// <summary>
-        /// 掴んだものが使えなくなったときだけ探し直す。
-        /// 空振りが続く間は間隔を空け、走査そのものを減らす。
-        /// </summary>
-        private bool ShouldScan()
-        {
-            if (Time.unscaledTime < nextScanTime) return false;
-
-            nextScanTime = Time.unscaledTime + RescanBackoffSeconds;
-            return true;
-        }
-
         private StandardLevelDetailViewController? FindDetailView()
         {
             if (IsUsable(detailView)) return detailView;
             if (!scanning) return null;
 
+            scanned = true;
             detailView = FindActive<StandardLevelDetailViewController>();
             return detailView;
         }
@@ -179,6 +190,7 @@ namespace HazardTimer.Services
             if (IsUsable(selectionNav)) return selectionNav;
             if (!scanning) return null;
 
+            scanned = true;
             selectionNav = FindActive<LevelSelectionNavigationController>();
             return selectionNav;
         }

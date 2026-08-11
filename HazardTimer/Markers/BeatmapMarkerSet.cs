@@ -127,6 +127,8 @@ namespace HazardTimer.Markers
             {
                 if (existing.Imported && !imported)
                 {
+                    // 実測が勝つ。時刻も実測のものに置き換える
+                    existing.SongTime = songTime;
                     existing.Imported = false;
                     Normalize();
                     return true;
@@ -198,10 +200,14 @@ namespace HazardTimer.Markers
             foreach (var other in markers)
             {
                 if (ReferenceEquals(other, marker)) continue;
-                if (Math.Abs(other.SongTime - marker.SongTime) < threshold)
-                {
-                    other.State = MarkerState.Off;
-                }
+                if (!SharesSlot(marker, other)) continue;
+
+                // フェイルは距離に関係なく 1 つしか使わない。壁と手動は時刻で判断する
+                var competes = marker.Source == MarkerSource.Fail
+                    ? other.Source == MarkerSource.Fail
+                    : Math.Abs(other.SongTime - marker.SongTime) < threshold;
+
+                if (competes) other.State = MarkerState.Off;
             }
 
             marker.State = MarkerState.On;
@@ -233,10 +239,16 @@ namespace HazardTimer.Markers
             return true;
         }
 
-        /// <summary>取り込みで作られたマーカーだけを消す。再取り込みの前処理。</summary>
+        /// <summary>
+        /// 取り込みで作られたマーカーを消す。再取り込みの前処理。
+        /// </summary>
+        /// <remarks>
+        /// 使う・使わないを指定したものは残す。利用者が手を入れた結果なので、
+        /// 遊ぶたびに取り込みが走って指定が消えるのでは指定する意味がない。
+        /// </remarks>
         public bool RemoveImported()
         {
-            var removed = markers.RemoveAll(m => m.Imported) > 0;
+            var removed = markers.RemoveAll(m => m.Imported && m.State == MarkerState.Auto) > 0;
             if (!removed && ImportedReplayCount == 0) return false;
 
             ImportedReplayCount = 0;
@@ -266,7 +278,7 @@ namespace HazardTimer.Markers
         /// 手前で落ちた記録は既に通過できているため。</item>
         /// <item>手動 … 実際に記録された地点と重なるならそちらへ譲る。重ならなければ対象。</item>
         /// </list>
-        /// 指定（<see cref="HazardMarker.Pinned"/>）があればそちらを優先する。
+        /// <see cref="MarkerState.On"/> の指定があればそれを使い、同じ枠の他は選ばない。
         /// </remarks>
         public void RecomputeActive()
         {
@@ -277,43 +289,44 @@ namespace HazardTimer.Markers
                 marker.IsActive = marker.State == MarkerState.On;
             }
 
-            var fails = Automatic(MarkerSource.Fail, threshold);
-            if (fails.Count > 0)
+            // フェイルは距離に関係なく全部で 1 グループ。指定があればそれで決まり
+            var fails = markers.Where(m => m.Source == MarkerSource.Fail).ToList();
+            if (fails.Count > 0 && !fails.Any(m => m.State == MarkerState.On))
             {
-                Choose(fails, byLatest: true).IsActive = true;
+                var candidates = fails.Where(m => m.State == MarkerState.Auto).ToList();
+                if (candidates.Count > 0) candidates[candidates.Count - 1].IsActive = true;
             }
 
             foreach (var group in WallGroups())
             {
-                Choose(group, byLatest: false).IsActive = true;
+                if (group.Any(m => m.State == MarkerState.On)) continue;
+
+                var candidates = group.Where(m => m.State == MarkerState.Auto).ToList();
+                if (candidates.Count > 0) candidates[0].IsActive = true;
             }
 
             // 手動は最後に決める。実測や取り込みで同じ地点が記録されているなら、
             // 手で置いた見当より実際の記録の方が確かなので譲る。
             // 記録が消えていた頃に手当てとして置いたものが、記録の復活後も
             // 二重に残り続けるのを防ぐ
-            foreach (var manual in Automatic(MarkerSource.Manual, threshold))
+            foreach (var manual in markers.Where(m => m.Source == MarkerSource.Manual
+                                                      && m.State == MarkerState.Auto))
             {
-                manual.IsActive = !markers.Any(other => other.Source != MarkerSource.Manual
+                manual.IsActive = !markers.Any(other => other.Source == MarkerSource.Wall
                                                         && other.IsActive
                                                         && Math.Abs(other.SongTime - manual.SongTime) < threshold);
             }
         }
 
         /// <summary>
-        /// 自動選択の対象になるマーカー。
-        /// 指定なしのもののうち、必ず使う指定と重なっていないものだけ。
+        /// 同じ表示枠を奪い合う関係か。
         /// </summary>
-        private List<HazardMarker> Automatic(MarkerSource source, float thresholdSeconds)
-            => markers.Where(m => m.Source == source
-                                  && m.State == MarkerState.Auto
-                                  && !HasForcedOnNear(m, thresholdSeconds))
-                      .ToList();
-
-        private bool HasForcedOnNear(HazardMarker marker, float thresholdSeconds)
-            => markers.Any(other => !ReferenceEquals(other, marker)
-                                    && other.State == MarkerState.On
-                                    && Math.Abs(other.SongTime - marker.SongTime) < thresholdSeconds);
+        /// <remarks>
+        /// フェイルは専用の行に出すので、壁や手動とは競合しない（設計 2.3）。
+        /// ここを区別しないと、壁を指定しただけで近くのフェイルが消えてしまう。
+        /// </remarks>
+        private static bool SharesSlot(HazardMarker a, HazardMarker b)
+            => (a.Source == MarkerSource.Fail) == (b.Source == MarkerSource.Fail);
 
         /// <summary>読み込み直後や編集後に、順序と対象を整える。</summary>
         internal void Normalize()
@@ -323,23 +336,18 @@ namespace HazardTimer.Markers
             Version++;
         }
 
-        /// <summary>そのマーカーと同じ危険地点として扱われる仲間（自分を含む）。</summary>
-        private IEnumerable<HazardMarker> GroupOf(HazardMarker marker) => marker.Source switch
-        {
-            MarkerSource.Fail => markers.Where(m => m.Source == MarkerSource.Fail),
-            MarkerSource.Wall => WallGroups().FirstOrDefault(g => g.Contains(marker))
-                                 ?? new List<HazardMarker> { marker },
-            _ => new List<HazardMarker> { marker },
-        };
-
         /// <summary>
         /// 壁マーカーを危険地点ごとにまとめる。
         /// 判定は「直前のマーカーからの間隔」で連鎖させる（設計 2.2）。
         /// </summary>
+        /// <remarks>
+        /// 指定の有無に関係なく全ての壁で連鎖を組む。使わない指定のものを先に外すと、
+        /// 鎖の途中が抜けてグループが分裂し、1 つの危険地点に 2 つの警告が立つ。
+        /// </remarks>
         private List<List<HazardMarker>> WallGroups()
         {
             var threshold = PluginConfig.Instance.ClusterThresholdSeconds;
-            var walls = Automatic(MarkerSource.Wall, threshold);
+            var walls = markers.Where(m => m.Source == MarkerSource.Wall).ToList();
             var groups = new List<List<HazardMarker>>();
 
             var index = 0;
