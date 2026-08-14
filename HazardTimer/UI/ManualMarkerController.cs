@@ -50,6 +50,17 @@ namespace HazardTimer.UI
         /// <summary>利用者が明示的に無効にしたものの色。</summary>
         private const string DisabledColor = "#585858";
 
+        /// <summary>
+        /// 選ばれてはいるが、種別の表示設定で切られているものの色。
+        /// </summary>
+        /// <remarks>
+        /// 灰色にすると「近接した記録で選ばれなかった」ものと見分けが付かず、
+        /// Turn On を押しても点かない理由が読み取れない。
+        /// 有効色と同じ緑の系統で明度だけ落とし、「選ばれてはいるが出ない」ことを
+        /// 一目で読めるようにする。
+        /// </remarks>
+        private const string HiddenBySettingColor = "#2E7D32";
+
         /// <summary>一覧に出している順のマーカー。選択位置と対応させる。</summary>
         private readonly List<HazardMarker> listed = new List<HazardMarker>();
 
@@ -162,25 +173,50 @@ namespace HazardTimer.UI
             }
         }
 
-        [UIValue("record-wall-hits")]
-        public bool RecordWallHits
-        {
-            get => PluginConfig.Instance.RecordWallHits;
-            set => PluginConfig.Instance.RecordWallHits = value;
-        }
-
-        [UIValue("record-fails")]
-        public bool RecordFails
-        {
-            get => PluginConfig.Instance.RecordFails;
-            set => PluginConfig.Instance.RecordFails = value;
-        }
-
         [UIValue("show-fail-marker")]
         public bool ShowFailMarker
         {
             get => PluginConfig.Instance.ShowFailMarker;
-            set => PluginConfig.Instance.ShowFailMarker = value;
+            set
+            {
+                PluginConfig.Instance.ShowFailMarker = value;
+                Refresh();
+            }
+        }
+
+        // 表示するかどうかは全譜面に効く。切り替えたら一覧の色も変わるので描き直す
+
+        [UIValue("show-miss-markers")]
+        public bool ShowMissMarkers
+        {
+            get => PluginConfig.Instance.ShowMissMarkers;
+            set
+            {
+                PluginConfig.Instance.ShowMissMarkers = value;
+                Refresh();
+            }
+        }
+
+        [UIValue("show-bomb-markers")]
+        public bool ShowBombMarkers
+        {
+            get => PluginConfig.Instance.ShowBombMarkers;
+            set
+            {
+                PluginConfig.Instance.ShowBombMarkers = value;
+                Refresh();
+            }
+        }
+
+        [UIValue("show-wall-markers")]
+        public bool ShowWallMarkers
+        {
+            get => PluginConfig.Instance.ShowWallMarkers;
+            set
+            {
+                PluginConfig.Instance.ShowWallMarkers = value;
+                Refresh();
+            }
         }
 
         [UIValue("auto-import-replays")]
@@ -547,8 +583,9 @@ namespace HazardTimer.UI
                 // 色を付けられるのは本文だけ。サブテキストはリッチテキストが効かず、
                 // タグがそのまま表示されてしまう
                 var color = marker.State == MarkerState.Off ? DisabledColor
-                          : marker.IsActive ? ActiveColor
-                          : InactiveColor;
+                          : !marker.IsActive ? InactiveColor
+                          : PluginConfig.Instance.IsShown(marker.Source) ? ActiveColor
+                          : HiddenBySettingColor;
 
                 markerList.Data.Add(new CustomListTableData.CustomCellInfo(
                     $"<color={color}>{FormatTime(marker.SongTime)}  {marker.DisplayLabel}</color>",
@@ -623,6 +660,14 @@ namespace HazardTimer.UI
 
             if (marker.State == MarkerState.On) parts.Add("On");
             else if (marker.State == MarkerState.Off) parts.Add("Off");
+
+            // 色だけでは理由まで伝わらないので、設定で切られていることは字でも出す
+            if (marker.State != MarkerState.Off
+                && marker.IsActive
+                && !PluginConfig.Instance.IsShown(marker.Source))
+            {
+                parts.Add("Hidden");
+            }
 
             return string.Join(" ", parts);
         }

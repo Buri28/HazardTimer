@@ -36,7 +36,10 @@ namespace HazardTimer.Services
 
         public void Initialize()
         {
-            if (!PluginConfig.Instance.RecordFails || energyCounter == null)
+            // 記録は常に行う。出すか出さないかは表示側の設定で決める。
+            // 記録を止めてしまうと、あとで表示に戻したときにその譜面だけ
+            // 記録が抜けた状態になり、取り直すにはもう一度遊ぶしかない
+            if (energyCounter == null)
             {
                 SetupObstacleMonitor();
                 return;
@@ -75,8 +78,7 @@ namespace HazardTimer.Services
 
         private void SetupObstacleMonitor()
         {
-            var needsObstacle = PluginConfig.Instance.RecordWallHits || energySimulator != null;
-            if (!needsObstacle || interaction == null) return;
+            if (interaction == null) return;
 
             obstacleMonitor = container.InstantiateComponentOnNewGameObject<ObstacleMonitor>(
                 "HazardTimer_ObstacleMonitor");
@@ -119,9 +121,6 @@ namespace HazardTimer.Services
 
         private void OnHeadEnteredObstacle()
         {
-            // エネルギー模擬のために監視が動いている場合があるので、ここでも設定を見る
-            if (!PluginConfig.Instance.RecordWallHits) return;
-
             var set = session.Markers;
             if (set == null) return;
 

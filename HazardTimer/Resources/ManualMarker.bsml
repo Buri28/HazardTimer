@@ -85,7 +85,7 @@
 
   <modal id='settings-modal' show-event='show-settings' hide-event='hide-settings'
          click-off-closes='true' move-to-center='true'
-         size-delta-x='106' size-delta-y='60'>
+         size-delta-x='106' size-delta-y='72'>
     <vertical spacing='1' pad='2'>
 
       <slider-setting
@@ -109,23 +109,30 @@
         bind-value='true'/>
 
       <toggle-setting
-        text='Record Wall Hits'
-        hover-hint='Record where you hit walls.'
-        value='record-wall-hits'
-        apply-on-change='true'
-        bind-value='true'/>
-
-      <toggle-setting
-        text='Record Fails'
-        hover-hint='Record where you failed. With NoFail, the fail point is simulated.'
-        value='record-fails'
-        apply-on-change='true'
-        bind-value='true'/>
-
-      <toggle-setting
         text='Show Fail Marker'
-        hover-hint='Show the fail countdown alongside the other markers.'
+        hover-hint='Count down to your fail point. Applies to every beatmap. Markers are kept either way.'
         value='show-fail-marker'
+        apply-on-change='true'
+        bind-value='true'/>
+
+      <toggle-setting
+        text='Show Miss Markers'
+        hover-hint='Count down to missed-note spots. Applies to every beatmap. Markers are kept either way.'
+        value='show-miss-markers'
+        apply-on-change='true'
+        bind-value='true'/>
+
+      <toggle-setting
+        text='Show Bomb Markers'
+        hover-hint='Count down to bomb-hit spots. Applies to every beatmap. Markers are kept either way.'
+        value='show-bomb-markers'
+        apply-on-change='true'
+        bind-value='true'/>
+
+      <toggle-setting
+        text='Show Wall Markers'
+        hover-hint='Count down to wall-hit spots. Applies to every beatmap. Markers are kept either way.'
+        value='show-wall-markers'
         apply-on-change='true'
         bind-value='true'/>
 

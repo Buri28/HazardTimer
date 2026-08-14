@@ -53,6 +53,10 @@ namespace HazardTimer.Services
                 if (marker.Source == MarkerSource.Fail) continue;
                 // 近接した記録のうち、対象に選ばれた 1 つだけを見る
                 if (!marker.IsActive) continue;
+                // 表示しない種別は、選ばれていても飛ばす。ここで抜くのは、
+                // 選び直し（RecomputeActive）に混ぜると設定を戻したときに
+                // 元の指定へ復帰できなくなるため
+                if (!PluginConfig.Instance.IsShown(marker.Source)) continue;
                 if (marker.SongTime < songTime) continue;
                 if (!IsWithinWindow(marker, songTime, leadTime)) break; // 昇順なのでこれ以降も窓の外
 
@@ -73,7 +77,7 @@ namespace HazardTimer.Services
         /// </summary>
         public CountdownEntry? GetFail()
         {
-            if (!PluginConfig.Instance.ShowFailMarker) return null;
+            if (!PluginConfig.Instance.IsShown(MarkerSource.Fail)) return null;
 
             var marker = session.Markers?.ActiveFail;
             if (marker == null) return null;

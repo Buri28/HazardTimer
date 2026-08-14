@@ -1,3 +1,4 @@
+using System;
 using Newtonsoft.Json;
 
 namespace HazardTimer.Markers
@@ -74,19 +75,33 @@ namespace HazardTimer.Markers
         [JsonProperty("label")]
         public string? Label { get; set; }
 
+        /// <summary>
+        /// ボムの表示。周辺視野でミスと見分けられるよう記号で囲う。
+        /// </summary>
+        public const string BombLabel = "💣BOMB💣";
+
         /// <summary>実際に表示される文字列。</summary>
         [JsonIgnore]
         public string DisplayLabel =>
-            string.IsNullOrWhiteSpace(Label) ? DefaultLabelFor(Source) : Label!;
+            string.IsNullOrWhiteSpace(Label) ? DefaultLabelFor(Source) : Decorate(Label!);
 
         public static string DefaultLabelFor(MarkerSource source) => source switch
         {
             MarkerSource.Fail => "FAIL",
             MarkerSource.Manual => "MARK",
             MarkerSource.Miss => "MISS",
-            MarkerSource.Bomb => "BOMB",
+            MarkerSource.Bomb => BombLabel,
             _ => "WALL",
         };
+
+        /// <summary>
+        /// 利用者が書き換えた名前でも、素の BOMB は囲った形で描く。
+        /// 見分けやすさは既定かどうかではなく、その配置がボムかどうかで決まるため。
+        /// </summary>
+        private static string Decorate(string label)
+            => string.Equals(label.Trim(), "BOMB", StringComparison.OrdinalIgnoreCase)
+                ? BombLabel
+                : label;
 
         public HazardMarker() { }
 

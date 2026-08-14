@@ -1,3 +1,5 @@
+using HazardTimer.Markers;
+
 namespace HazardTimer
 {
     /// <summary>
@@ -17,14 +19,34 @@ namespace HazardTimer
         /// </summary>
         public virtual float ClusterThresholdSeconds { get; set; } = 5.0f;
 
-        /// <summary>壁への接触地点を記録するか。</summary>
-        public virtual bool RecordWallHits { get; set; } = true;
-
-        /// <summary>フェイル地点を記録するか。</summary>
-        public virtual bool RecordFails { get; set; } = true;
-
         /// <summary>フェイルマーカーを他のマーカーと併記するか。</summary>
         public virtual bool ShowFailMarker { get; set; } = true;
+
+        /// <summary>ミス地点をタイマーに表示するか。</summary>
+        /// <remarks>
+        /// 種別ごとの表示可否は譜面ごとではなく全譜面に効かせる。譜面ごとの
+        /// On / Off は既にマーカー単位の指定でできるので、そちらと同じ粒度で
+        /// 二重に持つと、どちらで消したのか分からなくなる。
+        /// 記録そのものは残すため、切っても取り込みや一覧には影響しない。
+        /// </remarks>
+        public virtual bool ShowMissMarkers { get; set; } = true;
+
+        /// <summary>ボムの被弾地点をタイマーに表示するか。</summary>
+        public virtual bool ShowBombMarkers { get; set; } = true;
+
+        /// <summary>壁への接触地点をタイマーに表示するか。</summary>
+        public virtual bool ShowWallMarkers { get; set; } = true;
+
+        /// <summary>その種別をタイマーに表示する設定になっているか。</summary>
+        public bool IsShown(MarkerSource source) => source switch
+        {
+            MarkerSource.Miss => ShowMissMarkers,
+            MarkerSource.Bomb => ShowBombMarkers,
+            MarkerSource.Wall => ShowWallMarkers,
+            MarkerSource.Fail => ShowFailMarker,
+            // 手動マーカーは利用者が 1 つずつ置いたものなので、種別でまとめて消さない
+            _ => true,
+        };
 
         /// <summary>
         /// 曲を選んだときに、その譜面のリプレイを自動で取り込むか。

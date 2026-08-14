@@ -27,7 +27,39 @@ namespace HazardTimer.Services
         /// </summary>
         private static readonly HashSet<string> Suppressed = new HashSet<string>(StringComparer.Ordinal);
 
+        /// <summary>
+        /// 直前のプレイの取り込みを、メニューへ戻ってから何回まで試すか。
+        /// </summary>
+        /// <remarks>
+        /// BeatLeader がリプレイを書き出すのはリザルト画面の前後で、
+        /// メニューの初期化より後になることがある。1 回試して終わりだと、
+        /// そのプレイぶんだけ取り込まれないまま残る。
+        /// </remarks>
+        private const int LastPlayedRetryCount = 8;
+
+        /// <summary>次の再試行までの待ち時間。試すたびに倍にする。</summary>
+        /// <remarks>
+        /// 再試行のたびにリプレイ索引を作り直すため、等間隔で詰めると
+        /// メニューにいる間ずっとディレクトリ走査が走る。間隔を広げて回数を抑える。
+        /// </remarks>
+        private const float LastPlayedFirstDelaySeconds = 1.0f;
+
+        /// <summary>再試行の間隔の上限。</summary>
+        /// <remarks>
+        /// 倍にし続けると最後の 1 回だけが極端に遠くなる。書き出しはリザルト画面の
+        /// 前後なので、そこに留まっている間ずっと待てるよう、頭打ちにして
+        /// 全体の待ち時間（およそ 90 秒）を稼ぐ。
+        /// </remarks>
+        private const float LastPlayedMaxDelaySeconds = 30.0f;
+
         private int pendingSaves;
+
+        /// <summary>取り込みを待っている直前のプレイ。終わったら null。</summary>
+        private BeatmapKey? pendingLastPlayed;
+
+        private int lastPlayedAttemptsLeft;
+        private float nextLastPlayedAttemptTime;
+        private float lastPlayedDelay;
 
         /// <summary>自動取り込みが実際に何かを取り込んだときに発火する。</summary>
         public static event Action? ImportCompleted;
@@ -45,13 +77,31 @@ namespace HazardTimer.Services
             ReplayFileIndex.Invalidate();
 
             SelectedBeatmapTracker.SelectionChanged += OnSelectionChanged;
+            SelectedBeatmapTracker.Polled += OnPolled;
 
             // 選択追跡はこのサービスより先に初期化され、最初の選択通知を撃ち終えている。
             // プレイ直後に戻ってきたときの「今まさに選ばれている譜面」がそれなので、
             // ここで拾い直さないと、いま遊んだ譜面だけが取り込まれない
             OnSelectionChanged();
 
-            ImportLastPlayed();
+            pendingLastPlayed = HazardMarkerSession.LastPlayedBeatmapKey;
+            lastPlayedAttemptsLeft = LastPlayedRetryCount;
+            lastPlayedDelay = LastPlayedFirstDelaySeconds;
+            TryImportLastPlayed();
+        }
+
+        /// <summary>
+        /// 直前のプレイのリプレイが書き出されるのを待って、取り込みを試し直す。
+        /// </summary>
+        private void OnPolled()
+        {
+            if (!pendingLastPlayed.HasValue) return;
+            if (UnityEngine.Time.unscaledTime < nextLastPlayedAttemptTime) return;
+
+            // 索引はメニュー入場時に作り直したきり。その時点でまだ書き出されていない
+            // リプレイは載っていないので、試すたびに作り直す
+            ReplayFileIndex.Invalidate();
+            TryImportLastPlayed();
         }
 
         /// <summary>
@@ -62,21 +112,41 @@ namespace HazardTimer.Services
         /// 自動取り込みが働かない。遊んだ事実だけは残るので、メニューへ戻ったここで拾う。
         /// プレイ中ではないので、解析の重さがフレームレートに響かない。
         /// </remarks>
-        private void ImportLastPlayed()
+        private void TryImportLastPlayed()
         {
-            if (!PluginConfig.Instance.AutoImportReplays) return;
+            // 待ち時間は先に進めておく。どの経路で抜けても再試行の間隔が空くように
+            if (--lastPlayedAttemptsLeft <= 0)
+            {
+                pendingLastPlayed = null;
+            }
+            else
+            {
+                nextLastPlayedAttemptTime = UnityEngine.Time.unscaledTime + lastPlayedDelay;
+                lastPlayedDelay = Math.Min(lastPlayedDelay * 2f, LastPlayedMaxDelaySeconds);
+            }
+
+            if (!PluginConfig.Instance.AutoImportReplays) { pendingLastPlayed = null; return; }
 
             var key = HazardMarkerSession.LastPlayedBeatmapKey;
-            if (!key.HasValue) return;
-            if (Suppressed.Contains(BeatmapMarkerKey.From(key.Value))) return;
+            if (!key.HasValue) { pendingLastPlayed = null; return; }
+            if (Suppressed.Contains(BeatmapMarkerKey.From(key.Value))) { pendingLastPlayed = null; return; }
+
+            // リプレイがまだ無い＝書き出しを待っている状態。ここで打ち切らずに再試行へ回す
             if (ReplayImportService.CountAvailable(key.Value) == 0) return;
 
             var set = MarkerStore.Instance.GetOrCreate(key.Value);
-            if (set.AutoImportSuppressed) return;
+            if (set.AutoImportSuppressed) { pendingLastPlayed = null; return; }
+
+            // 未読が無いのは「今のプレイのリプレイがまだ書き出されていない」場合も含む。
+            // 2 回目以降は前回のリプレイが残っているため、件数だけでは待ち状態と
+            // 区別できず、ここで打ち切ると直前のプレイぶんが取り込まれない
             if (!ReplayImportService.NeedsImport(key.Value, set)) return;
 
             var result = ReplayImportService.Import(key.Value, set);
             if (result.ReplayCount == 0) return;
+
+            // 取り込めたので、これ以上の再試行は要らない
+            pendingLastPlayed = null;
 
             MarkerStore.Instance.MarkDirty();
             Flush();
@@ -90,6 +160,7 @@ namespace HazardTimer.Services
         public void Dispose()
         {
             SelectedBeatmapTracker.SelectionChanged -= OnSelectionChanged;
+            SelectedBeatmapTracker.Polled -= OnPolled;
             Flush();
         }
 
