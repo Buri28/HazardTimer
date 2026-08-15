@@ -89,8 +89,8 @@
     <vertical spacing='1' pad='2'>
 
       <slider-setting
-        text='Lead Time'
-        hover-hint='How many seconds ahead the countdown starts.'
+        text='Countdown Time'
+        hover-hint='How long the countdown is shown before you reach a marker.'
         value='lead-time'
         min='1' max='30' increment='0.5'
         formatter='FormatSeconds'
@@ -99,8 +99,8 @@
         bind-value='true'/>
 
       <slider-setting
-        text='Cluster Threshold'
-        hover-hint='Wall hits closer together than this are merged into one hazard.'
+        text='Merge Interval'
+        hover-hint='Records closer together than this are treated as one spot, and only one of them counts down.'
         value='cluster-threshold'
         min='0.5' max='15' increment='0.5'
         formatter='FormatSeconds'
