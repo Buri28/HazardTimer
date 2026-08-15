@@ -36,6 +36,28 @@ namespace HazardTimer.Replay
         /// <summary>索引を捨てる。次回の参照で作り直される。</summary>
         public static void Invalidate() => index = null;
 
+        /// <summary>
+        /// リプレイ置き場の更新時刻。ファイルが増えたかを安く見張るために使う。
+        /// </summary>
+        /// <remarks>
+        /// ディレクトリの更新時刻はファイルの作成で変わる。走査は数千件あると重いので、
+        /// 「増えたかどうか」だけを問い合わせるのに走査は使わない。
+        /// 取れないときは <see cref="DateTime.MinValue"/>。変化なしとして扱われる。
+        /// </remarks>
+        public static DateTime FolderStampUtc()
+        {
+            try
+            {
+                return Directory.Exists(ReplaysDirectory)
+                    ? Directory.GetLastWriteTimeUtc(ReplaysDirectory)
+                    : DateTime.MinValue;
+            }
+            catch (Exception)
+            {
+                return DateTime.MinValue;
+            }
+        }
+
         /// <summary>指定した譜面に対応するリプレイを、古い順に返す。</summary>
         public static IReadOnlyList<ReplayFileInfo> Find(BeatmapKey key)
         {

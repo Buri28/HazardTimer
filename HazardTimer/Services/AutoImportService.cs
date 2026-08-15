@@ -28,14 +28,20 @@ namespace HazardTimer.Services
         private static readonly HashSet<string> Suppressed = new HashSet<string>(StringComparer.Ordinal);
 
         /// <summary>
-        /// 直前のプレイの取り込みを、メニューへ戻ってから何回まで試すか。
+        /// 書き出しに気づいてから、続けて何回まで取り込みを試すか。
         /// </summary>
         /// <remarks>
-        /// BeatLeader がリプレイを書き出すのはリザルト画面の前後で、
-        /// メニューの初期化より後になることがある。1 回試して終わりだと、
-        /// そのプレイぶんだけ取り込まれないまま残る。
+        /// ファイルが現れた時点ではまだ書き込み中で、読んでも中身が揃っていないことがある。
+        /// 置き場の更新時刻はファイルの作成で動くきりなので、以後の書き込みでは動かない。
+        /// 気づいた回だけで判断せず、数回ぶん試し直す。
         /// </remarks>
         private const int LastPlayedRetryCount = 8;
+
+        /// <summary>リプレイ置き場を見に行く間隔。</summary>
+        /// <remarks>
+        /// 更新時刻を 1 つ問い合わせるだけなので、ディレクトリ走査のような重さは無い。
+        /// </remarks>
+        private const float ReplayFolderWatchIntervalSeconds = 1.0f;
 
         /// <summary>次の再試行までの待ち時間。試すたびに倍にする。</summary>
         /// <remarks>
@@ -61,6 +67,11 @@ namespace HazardTimer.Services
         private float nextLastPlayedAttemptTime;
         private float lastPlayedDelay;
 
+        /// <summary>最後に見たリプレイ置き場の更新時刻。</summary>
+        private DateTime replayFolderStamp;
+
+        private float nextFolderCheckTime;
+
         /// <summary>自動取り込みが実際に何かを取り込んだときに発火する。</summary>
         public static event Action? ImportCompleted;
 
@@ -85,6 +96,13 @@ namespace HazardTimer.Services
             OnSelectionChanged();
 
             pendingLastPlayed = HazardMarkerSession.LastPlayedBeatmapKey;
+            replayFolderStamp = ReplayFileIndex.FolderStampUtc();
+            BeginLastPlayedAttempts();
+        }
+
+        /// <summary>取り込みの試行をひと組ぶん仕切り直す。</summary>
+        private void BeginLastPlayedAttempts()
+        {
             lastPlayedAttemptsLeft = LastPlayedRetryCount;
             lastPlayedDelay = LastPlayedFirstDelaySeconds;
             TryImportLastPlayed();
@@ -93,15 +111,42 @@ namespace HazardTimer.Services
         /// <summary>
         /// 直前のプレイのリプレイが書き出されるのを待って、取り込みを試し直す。
         /// </summary>
+        /// <remarks>
+        /// 待ち方は 2 段構え。書き出しは置き場の更新時刻を見張って気づき、
+        /// 気づいたあとの数回は時間を空けて試し直す。
+        /// <para>
+        /// 決め打ちの回数だけで待つ方式では足りなかった。プレイ 2 回目以降は
+        /// 前のプレイのリプレイが残っているぶん判定が通りにくく、
+        /// 書き出しが遅れた回のぶんが落ちる。見張り側には打ち切りを設けず、
+        /// メニューにいる間はいつ書き出されても拾えるようにする。
+        /// </para>
+        /// </remarks>
         private void OnPolled()
         {
             if (!pendingLastPlayed.HasValue) return;
-            if (UnityEngine.Time.unscaledTime < nextLastPlayedAttemptTime) return;
 
-            // 索引はメニュー入場時に作り直したきり。その時点でまだ書き出されていない
-            // リプレイは載っていないので、試すたびに作り直す
+            var now = UnityEngine.Time.unscaledTime;
+
+            // 気づいた直後の試し直し。読み込みが空振りしても数回は粘る
+            if (lastPlayedAttemptsLeft > 0 && now >= nextLastPlayedAttemptTime)
+            {
+                // 索引はメニュー入場時に作り直したきり。その時点でまだ書き出されていない
+                // リプレイは載っていないので、試すたびに作り直す
+                ReplayFileIndex.Invalidate();
+                TryImportLastPlayed();
+                return;
+            }
+
+            if (now < nextFolderCheckTime) return;
+            nextFolderCheckTime = now + ReplayFolderWatchIntervalSeconds;
+
+            var stamp = ReplayFileIndex.FolderStampUtc();
+            if (stamp == replayFolderStamp) return;
+            replayFolderStamp = stamp;
+
+            // ファイルが増えた。索引を作り直して、試行をひと組やり直す
             ReplayFileIndex.Invalidate();
-            TryImportLastPlayed();
+            BeginLastPlayedAttempts();
         }
 
         /// <summary>
@@ -114,16 +159,11 @@ namespace HazardTimer.Services
         /// </remarks>
         private void TryImportLastPlayed()
         {
-            // 待ち時間は先に進めておく。どの経路で抜けても再試行の間隔が空くように
-            if (--lastPlayedAttemptsLeft <= 0)
-            {
-                pendingLastPlayed = null;
-            }
-            else
-            {
-                nextLastPlayedAttemptTime = UnityEngine.Time.unscaledTime + lastPlayedDelay;
-                lastPlayedDelay = Math.Min(lastPlayedDelay * 2f, LastPlayedMaxDelaySeconds);
-            }
+            // 待ち時間は先に進めておく。どの経路で抜けても再試行の間隔が空くように。
+            // 使い切っても待ち自体はやめない。書き出しに気づけばまた組み直される
+            lastPlayedAttemptsLeft--;
+            nextLastPlayedAttemptTime = UnityEngine.Time.unscaledTime + lastPlayedDelay;
+            lastPlayedDelay = Math.Min(lastPlayedDelay * 2f, LastPlayedMaxDelaySeconds);
 
             if (!PluginConfig.Instance.AutoImportReplays) { pendingLastPlayed = null; return; }
 
@@ -148,8 +188,10 @@ namespace HazardTimer.Services
             // 取り込めたので、これ以上の再試行は要らない
             pendingLastPlayed = null;
 
+            // 直前のプレイは 1 譜面だけなので、溜めずにその場で書き出す。
+            // Flush は溜まった件数で判断するため、ここを通しても書かれない
             MarkerStore.Instance.MarkDirty();
-            Flush();
+            MarkerStore.Instance.Save();
             Plugin.Log?.Info($"Imported {result.ReplayCount} replay(s) for the beatmap just played.");
 
             // 遊んだ直後は、その譜面の一覧を開いたままメニューへ戻ってくることが多い。

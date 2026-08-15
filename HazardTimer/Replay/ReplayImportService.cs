@@ -3,9 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using HazardTimer.Markers;
 
-// ミス地点の取り込みで使う集計用の型。譜面時間の近いミスを 1 箇所にまとめる
-using MissCluster = System.Collections.Generic.KeyValuePair<float, System.Collections.Generic.HashSet<int>>;
-
 namespace HazardTimer.Replay
 {
     /// <summary>取り込み結果。UI へ返す要約。</summary>
@@ -32,6 +29,25 @@ namespace HazardTimer.Replay
     /// </remarks>
     public static class ReplayImportService
     {
+        /// <summary>
+        /// 近い時刻のイベントをまとめた 1 箇所。
+        /// </summary>
+        /// <remarks>
+        /// 「何回のプレイで落としたか」と「合計で何回落としたか」は別の数で、
+        /// 種別によってどちらを重大度に使うかが違うので両方を持つ。
+        /// </remarks>
+        private sealed class HitCluster
+        {
+            /// <summary>この箇所の先頭のイベント時刻。</summary>
+            public float Time;
+
+            /// <summary>この箇所を落としたリプレイの番号。</summary>
+            public readonly HashSet<int> Replays = new HashSet<int>();
+
+            /// <summary>この箇所に入ったイベントの総数。</summary>
+            public int Events;
+        }
+
         /// <summary>BSOR のノートイベント種別。1 は切り損ね、2 は見逃し、3 は爆弾。</summary>
         private const int NoteEventBad = 1;
         private const int NoteEventMiss = 2;
@@ -62,11 +78,17 @@ namespace HazardTimer.Replay
         /// 曲の先頭に近いもの。ミスは元々多いので、重なったもの全部を対象にすると
         /// カウントダウンが出っぱなしになる。残りは候補として使わない指定で入れておき、
         /// 必要になったら利用者が切り替える。
+        /// <para>
+        /// 数えるのはプレイ数ではなく<b>ミスの総数</b>。1 回のプレイで 5 個落とす箇所と
+        /// 1 個だけ落とす箇所では難所としての重さが違うのに、プレイ数で数えると
+        /// どちらも同じ 1 になってしまう。
+        /// </para>
         /// </remarks>
         private static void ImportMisses(List<BsorReplay> parsed, BeatmapMarkerSet set)
         {
             ImportHits(parsed, set, MarkerSource.Miss,
-                       PluginConfig.Instance.MaxMissMarkers, IsMissed, allOn: false);
+                       PluginConfig.Instance.MaxMissMarkers, IsMissed,
+                       allOn: false, countEvents: true);
         }
 
         /// <summary>
@@ -81,7 +103,8 @@ namespace HazardTimer.Replay
         {
             ImportHits(parsed, set, MarkerSource.Bomb,
                        PluginConfig.Instance.MaxBombMarkers,
-                       note => note.EventType == NoteEventBomb, allOn: true);
+                       note => note.EventType == NoteEventBomb,
+                       allOn: true, countEvents: false);
         }
 
         /// <summary>
@@ -91,44 +114,64 @@ namespace HazardTimer.Replay
         /// true なら取り込んだ全てを使う指定にする。
         /// false なら、最も重なっている箇所の先頭 1 つだけを使う指定にする。
         /// </param>
+        /// <param name="countEvents">
+        /// true ならその箇所のイベント総数を、false なら落としたプレイの数を重大度に使う。
+        /// </param>
         private static void ImportHits(List<BsorReplay> parsed, BeatmapMarkerSet set,
                                        MarkerSource source, int limit,
-                                       Func<ReplayNoteEvent, bool> match, bool allOn)
+                                       Func<ReplayNoteEvent, bool> match,
+                                       bool allOn, bool countEvents)
         {
             if (limit <= 0) return;
 
             var threshold = PluginConfig.Instance.ClusterThresholdSeconds;
             var clusters = BuildClusters(parsed, threshold, match);
 
+            int Weight(HitCluster cluster) => countEvents ? cluster.Events : cluster.Replays.Count;
+
             var ordered = clusters
-                .Where(c => c.Value.Count > 1)
-                .OrderByDescending(c => c.Value.Count)
-                .ThenBy(c => c.Key)
-                .Concat(clusters.Where(c => c.Value.Count == 1).OrderBy(c => c.Key))
+                .Where(c => Weight(c) > 1)
+                .OrderByDescending(Weight)
+                .ThenBy(c => c.Time)
+                .Concat(clusters.Where(c => Weight(c) == 1).OrderBy(c => c.Time))
                 .ToList();
+
+            // 母数はこの取り込みで読んだプレイ数。今回落とさなかった箇所も分母は増える。
+            // 落とした回だけを数えると「たまに大崩れする箇所」が「毎回少し落とす箇所」より
+            // 上に来てしまい、1 プレイあたりの重さを表さなくなる。
+            // 先に全部へ足しておけば、この後の統合は回数だけを見ればよい
+            var plays = countEvents ? parsed.Count : 0;
+            if (plays > 0)
+            {
+                foreach (var marker in set.Markers)
+                {
+                    if (marker.Source == source) marker.PlayCount += plays;
+                }
+            }
 
             var added = 0;
             var merged = 0;
 
             foreach (var cluster in ordered)
             {
-                var playCount = cluster.Value.Count;
+                var weight = Weight(cluster);
 
                 // 同じ危険地点が既にあるなら、回数だけ足す。
                 // 前回までに読んだリプレイの記録を残したまま積み上げるため
-                var existing = set.FindNear(cluster.Key, source, threshold);
+                var existing = set.FindNear(cluster.Time, source, threshold);
                 if (existing != null)
                 {
-                    existing.HitCount += playCount;
+                    // 母数は上で足してあるので、ここでは回数だけ
+                    existing.HitCount += weight;
                     merged++;
                     continue;
                 }
 
                 if (set.CountOf(source) >= limit) continue;
 
-                if (set.AddImportedHit(cluster.Key, source,
+                if (set.AddImportedHit(cluster.Time, source,
                                        allOn ? MarkerState.On : MarkerState.Off,
-                                       playCount))
+                                       weight, plays))
                 {
                     added++;
                 }
@@ -140,21 +183,26 @@ namespace HazardTimer.Replay
             if (!allOn) set.PromoteMostHit(source);
 
             Plugin.Log?.Info(
-                $"{source}: {clusters.Count} spot(s) in new replay(s), " +
+                $"{source}: {clusters.Count} spot(s) in {parsed.Count} new replay(s), " +
                 $"{added} added, {merged} merged into existing (limit {limit}, now {set.CountOf(source)}).");
         }
 
         /// <summary>
         /// 近い時刻のミスを 1 箇所にまとめる。
-        /// 値は、その箇所を落としたリプレイの番号（重なりの数え上げに使う）。
         /// </summary>
         /// <remarks>
         /// 区切りは「先頭からの窓」で行う。壁と同じ「直前からの間隔」で連鎖させると、
         /// ミスは密なので曲全体が 1 つに繋がってしまう。
         /// 実データでは 157 個のミスが 1 クラスタになり、まとめる意味が無くなっていた。
+        /// <para>
+        /// 区切る前に全リプレイのイベントを 1 本の並びに混ぜる。プレイごとに区切ると
+        /// 同じ難所が回によって違う位置で切れ、まとめ直せなくなる。
+        /// 3 秒・5 秒で落とした回と 6 秒・9 秒で落とした回があるなら、
+        /// 3・5・6・9 秒を 1 回のプレイのミスとみなして区切る。
+        /// </para>
         /// </remarks>
-        private static List<MissCluster> BuildClusters(List<BsorReplay> parsed, float thresholdSeconds,
-                                                       Func<ReplayNoteEvent, bool> match)
+        private static List<HitCluster> BuildClusters(List<BsorReplay> parsed, float thresholdSeconds,
+                                                      Func<ReplayNoteEvent, bool> match)
         {
             var points = new List<KeyValuePair<float, int>>();
             for (var index = 0; index < parsed.Count; index++)
@@ -174,16 +222,19 @@ namespace HazardTimer.Replay
             }
             points.Sort((a, b) => a.Key.CompareTo(b.Key));
 
-            var clusters = new List<MissCluster>();
+            var clusters = new List<HitCluster>();
 
             foreach (var point in points)
             {
                 if (clusters.Count == 0
-                    || point.Key - clusters[clusters.Count - 1].Key >= thresholdSeconds)
+                    || point.Key - clusters[clusters.Count - 1].Time >= thresholdSeconds)
                 {
-                    clusters.Add(new MissCluster(point.Key, new HashSet<int>()));
+                    clusters.Add(new HitCluster { Time = point.Key });
                 }
-                clusters[clusters.Count - 1].Value.Add(point.Value);
+
+                var current = clusters[clusters.Count - 1];
+                current.Replays.Add(point.Value);
+                current.Events++;
             }
             return clusters;
         }

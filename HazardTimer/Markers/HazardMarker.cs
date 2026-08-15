@@ -26,6 +26,21 @@ namespace HazardTimer.Markers
         public int HitCount { get; set; } = 1;
 
         /// <summary>
+        /// <see cref="HitCount"/> を数えたプレイの数。0 なら数えていない。
+        /// </summary>
+        /// <remarks>
+        /// ミスは 1 箇所で何個も落とすので、重さは延べ数で見る必要がある。
+        /// ただし延べ数のままだと、遊んだ回数が多い譜面ほど数が大きくなり、
+        /// 譜面をまたいで比べられない。母数を持たせて 1 プレイあたりに直す。
+        /// </remarks>
+        [JsonProperty("plays")]
+        public int PlayCount { get; set; }
+
+        /// <summary>1 プレイあたりの回数。母数が無ければ延べ数をそのまま返す。</summary>
+        [JsonIgnore]
+        public float AverageHits => PlayCount > 0 ? (float)HitCount / PlayCount : HitCount;
+
+        /// <summary>
         /// リプレイからの取り込みで作られたマーカーなら true。
         /// </summary>
         /// <remarks>

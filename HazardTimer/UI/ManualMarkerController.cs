@@ -643,14 +643,17 @@ namespace HazardTimer.UI
         /// 一覧のサブテキスト。種別・回数・出所・指定を短くまとめる。
         /// </summary>
         /// <remarks>
-        /// ミスの回数は「何回のプレイでそこを落としたか」。多いほど本当の難所。
+        /// ミスの回数は「1 リプレイあたり、その区間で何個落としたか」。壁や爆弾の
+        /// 「何回のプレイで当たったか」と違い、1 回のプレイで何個落としたかも重さに入る。
+        /// 延べ数のままだと遊んだ回数が多い譜面ほど大きくなるので、平均で出す。
         /// ミスは取り込みでしか作られないので、出所は書かない。
         /// </remarks>
         private static string DescribeSource(HazardMarker marker)
         {
             var parts = new List<string> { marker.Source.ToString() };
 
-            if (marker.HitCount > 1) parts.Add($"x{marker.HitCount}");
+            if (marker.PlayCount > 0) parts.Add($"x{marker.AverageHits:F1}");
+            else if (marker.HitCount > 1) parts.Add($"x{marker.HitCount}");
             if (marker.Imported
                 && marker.Source != MarkerSource.Miss
                 && marker.Source != MarkerSource.Bomb)

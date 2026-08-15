@@ -115,15 +115,20 @@ namespace HazardTimer.Markers
         /// 使う・使わないは取り込み側が決める。ミスは数が多く、
         /// 全部を警告の対象にすると画面がふさがるため。
         /// </remarks>
-        /// <param name="playCount">その箇所を落としたプレイの数。多いほど本当の難所。</param>
-        public bool AddImportedHit(float songTime, MarkerSource source, MarkerState state, int playCount)
+        /// <param name="hitCount">その箇所で数えた回数。多いほど本当の難所。</param>
+        /// <param name="playCount">
+        /// <paramref name="hitCount"/> を数えたプレイの数。0 なら 1 プレイあたりに直さない。
+        /// </param>
+        public bool AddImportedHit(float songTime, MarkerSource source, MarkerState state,
+                                   int hitCount, int playCount)
         {
             if (NearestSameSpot(songTime, source) != null) return false;
 
             Insert(new HazardMarker(songTime, source, imported: true)
             {
                 State = state,
-                HitCount = playCount,
+                HitCount = hitCount,
+                PlayCount = playCount,
             });
             return true;
         }
@@ -360,6 +365,8 @@ namespace HazardTimer.Markers
         /// 判断には積み上げた回数を使う。1 回の取り込みで読むリプレイは
         /// 遊んだ直後なら 1 件しかないため、その回の重なりだけで決めると
         /// いつまでも候補が現れない。
+        /// 比べるのは 1 プレイあたりに直した値。延べ数のままだと、
+        /// 早くから記録している箇所ほど有利になり、後から見つけた難所が上に来ない。
         /// 利用者が指定を触ったものは動かさない。
         /// </remarks>
         public bool PromoteMostHit(MarkerSource source)
@@ -368,7 +375,7 @@ namespace HazardTimer.Markers
 
             var best = markers
                 .Where(m => m.Source == source && !m.UserTouched && m.HitCount > 1)
-                .OrderByDescending(m => m.HitCount)
+                .OrderByDescending(m => m.AverageHits)
                 .ThenBy(m => m.SongTime)
                 .FirstOrDefault();
 

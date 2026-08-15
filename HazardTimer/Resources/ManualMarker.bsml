@@ -154,7 +154,7 @@
 
       <increment-setting
         text='Max Miss Markers'
-        hover-hint='How many missed-note spots to import. Spots missed in several plays are turned on, the rest are added turned off. 0 imports none.'
+        hover-hint='How many missed-note spots to import. The spot with the most misses is turned on, the rest are added turned off. 0 imports none.'
         value='max-miss-markers'
         integer-only='true'
         min='0' max='50' increment='1'
