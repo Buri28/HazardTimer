@@ -105,7 +105,7 @@ HazardTimer はゲーム本体と同じ規則で体力を数え直し、その�
 
 Mods タブの `Settings` ボタンから変更できます。
 
-<img width="50%" height="50%" alt="image" src="https://github.com/user-attachments/assets/12854469-54a3-4e06-b50a-26388ee4de58" />
+<img width="50%" height="50%" alt="image" src="https://github.com/user-attachments/assets/2e412c07-8c58-426c-b578-76b3fdb27898" />
 
 | 項目 | 内容 | 既定 |
 |---|---|---|
