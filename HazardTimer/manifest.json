@@ -23,7 +23,8 @@
       "MultiplayerReady": true,
       "BSML": {
         "Resource": "HazardTimer.Resources.CounterSettings.bsml",
-        "Host": "HazardTimer.UI.SettingController"
+        "Host": "HazardTimer.UI.SettingController",
+        "Icon": "HazardTimer.Resources.icon.png"
       },
       "ConfigDefaults": {
         "Enabled": true,

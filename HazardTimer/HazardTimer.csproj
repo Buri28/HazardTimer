@@ -162,6 +162,8 @@
   <ItemGroup>
     <EmbeddedResource Include="manifest.json" />
     <EmbeddedResource Include="Resources\*.bsml" />
+    <!-- Counters+ の設定画面に出すアイコン。論理名は HazardTimer.Resources.icon.png -->
+    <EmbeddedResource Include="Resources\icon.png" />
   </ItemGroup>
 
 </Project>
