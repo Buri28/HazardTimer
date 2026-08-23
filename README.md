@@ -8,7 +8,7 @@
 到達までの秒数が事前に分かれば、しゃがむ準備ができます。
 
 > **開発中です。** まだ動作するリリースはありません。
-<img width="40%" height="40%" alt="image" src="https://github.com/user-attachments/assets/f50f2cb8-372a-40a8-9e14-81be00762603" />
+<img width="40%" height="40%" alt="image" src="https://github.com/user-attachments/assets/b0e2db18-1a2d-4f6e-b47b-1a650226741b" />
 
 ## 何を危険地点とするか
 
@@ -35,9 +35,7 @@
 
 マーカーの編集と設定は、曲選択画面の左パネル **Mods タブ → HazardTimer** で行います。
 
-<img width="50%" height="50%" alt="image" src="https://github.com/user-attachments/assets/27c70ef7-310d-4a7a-8471-871308b85b86" />
-
-
+<img width="50%" height="50%" alt="image" src="https://github.com/user-attachments/assets/72c2a06a-cffa-4feb-a91c-f9e64677e1c2" />
 
 ### 過去のリプレイから取り込む
 
@@ -53,7 +51,8 @@ HazardTimer はゲーム本体と同じ規則で体力を数え直し、その�
 
 Mods タブの `Settings` から変更できます。
 
-<img width="50%" height="50%" alt="image" src="https://github.com/user-attachments/assets/fc33ba9b-3805-44b9-a850-615f28505a80" />
+<img width="50%" height="50%" alt="image" src="https://github.com/user-attachments/assets/12854469-54a3-4e06-b50a-26388ee4de58" />
+
 
 | 項目 | 内容 | 既定 |
 |---|---|---|
