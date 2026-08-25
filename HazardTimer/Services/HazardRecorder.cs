@@ -36,6 +36,18 @@ namespace HazardTimer.Services
 
         public void Initialize()
         {
+            // リプレイ再生は自分のプレイではないので記録しない。
+            // 自分のリプレイなら取り込み済みのものを二度数えることになり、
+            // 他人のリプレイなら当たってもいない壁がマーカーとして残る。
+            // 表示側（カウントダウン）はそのまま動かす
+            if (ReplayPlaybackDetector.IsPlayingReplay)
+            {
+                // 詳細ログではなく常に出す。記録が止まったことに気づける手がかりが
+                // 他に無く、判定を誤ったときは「急に記録されなくなった」としか見えない
+                Plugin.Log?.Info("Replay playback detected; recording is disabled for this session.");
+                return;
+            }
+
             // 記録は常に行う。出すか出さないかは表示側の設定で決める。
             // 記録を止めてしまうと、あとで表示に戻したときにその譜面だけ
             // 記録が抜けた状態になり、取り直すにはもう一度遊ぶしかない

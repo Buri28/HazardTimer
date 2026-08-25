@@ -31,7 +31,7 @@ namespace HazardTimer.UI
                                               // （AccSaber など）でタブが出ない
                                               MenuType.All));
 
-            if (tabRegistered) Plugin.Log?.Info("Menu UI registered");
+            if (tabRegistered) Plugin.LogDebug("Menu UI registered");
         }
 
         public void Dispose()

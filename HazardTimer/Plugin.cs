@@ -17,6 +17,25 @@ namespace HazardTimer
         internal static Plugin? Instance { get; private set; }
         public static IPA.Logging.Logger? Log { get; private set; }
 
+        /// <summary>
+        /// 詳細ログを出すか。既定は false で、警告とエラーだけをログに残す。
+        /// </summary>
+        /// <remarks>
+        /// 動作の記録は不具合を追うときにしか読まないのに、毎回の曲選択で何行も出る。
+        /// 他プラグインのログに混ざって邪魔になるので、既定では止めておき、
+        /// 調べたいときだけここを true にしてビルドし直す。
+        /// </remarks>
+        internal static bool DebugLogging = false;
+
+        /// <summary>
+        /// 詳細ログ。<see cref="DebugLogging"/> が有効なときだけ出力する。
+        /// 警告とエラーはこれを通さず、直接 <see cref="Log"/> へ出す。
+        /// </summary>
+        internal static void LogDebug(string message)
+        {
+            if (DebugLogging) Log?.Info(message);
+        }
+
         [Init]
         public void Init(IPA.Logging.Logger logger, IPA.Config.Config config, Zenjector zenjector)
         {
@@ -31,7 +50,7 @@ namespace HazardTimer
         }
 
         [OnEnable]
-        public void OnEnable() => Log?.Info("HazardTimer enabled");
+        public void OnEnable() => LogDebug("HazardTimer enabled");
 
         [OnDisable]
         public void OnDisable()

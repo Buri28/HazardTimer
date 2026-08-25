@@ -192,7 +192,7 @@ namespace HazardTimer.Services
             // Flush は溜まった件数で判断するため、ここを通しても書かれない
             MarkerStore.Instance.MarkDirty();
             MarkerStore.Instance.Save();
-            Plugin.Log?.Info($"Imported {result.ReplayCount} replay(s) for the beatmap just played.");
+            Plugin.LogDebug($"Imported {result.ReplayCount} replay(s) for the beatmap just played.");
 
             // 遊んだ直後は、その譜面の一覧を開いたままメニューへ戻ってくることが多い。
             // 通知しないと、増えたマーカーが画面に出ない

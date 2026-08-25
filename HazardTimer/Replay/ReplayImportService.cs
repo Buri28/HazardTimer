@@ -182,7 +182,7 @@ namespace HazardTimer.Replay
             // その回の重なりだけで決めると、いつまでも候補が現れない
             if (!allOn) set.PromoteMostHit(source);
 
-            Plugin.Log?.Info(
+            Plugin.LogDebug(
                 $"{source}: {clusters.Count} spot(s) in {parsed.Count} new replay(s), " +
                 $"{added} added, {merged} merged into existing (limit {limit}, now {set.CountOf(source)}).");
         }
@@ -336,7 +336,7 @@ namespace HazardTimer.Replay
             // 1 つあるだけで曲を選ぶたびに解析をやり直すことになる
             foreach (var file in sources) set.MarkImported(file.Timestamp);
 
-            Plugin.Log?.Info(
+            Plugin.LogDebug(
                 $"Import {BeatmapMarkerKey.From(key)}: " +
                 $"{sources.Count} new replay file(s) of {ReplayFileIndex.Find(key).Count} present, " +
                 $"{parsed.Count} readable. " +
@@ -344,7 +344,7 @@ namespace HazardTimer.Replay
 
             foreach (var file in sources)
             {
-                Plugin.Log?.Info($"  {System.IO.Path.GetFileName(file.Path)}");
+                Plugin.LogDebug($"  {System.IO.Path.GetFileName(file.Path)}");
             }
 
             return new ImportResult(parsed.Count, set.Count - before, failImported);
