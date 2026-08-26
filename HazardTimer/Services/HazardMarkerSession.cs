@@ -19,10 +19,17 @@ namespace HazardTimer.Services
         private BeatmapMarkerSet? markerSet;
         private bool changed;
 
+        private bool? isReplay;
+
         /// <summary>
         /// このセッションがリプレイ再生か。自分のプレイとして扱ってよいかの判断に使う。
         /// </summary>
-        private bool isReplay;
+        /// <remarks>
+        /// 記録側（<see cref="HazardRecorder"/>）もここを見る。判定を 1 プレイ 1 回に
+        /// 揃えておかないと、2 箇所が別々に判断して食い違う余地が残る。
+        /// 初期化の順に依存しないよう、最初に聞かれた時点で決める。
+        /// </remarks>
+        public bool IsReplay => isReplay ??= ReplayPlaybackDetector.IsPlayingReplay;
 
         /// <summary>
         /// 直前にプレイした譜面。メニューへ戻ったときの取り込み対象に使う。
@@ -55,12 +62,11 @@ namespace HazardTimer.Services
             // 書き換えると、メニューに戻ったときの取り込みが再生した譜面に向いてしまい、
             // 本当に直前に遊んだ譜面の取り込みが落ちる（BeatLeader のリザルトから
             // そのまま自分のリプレイを見る流れで起きる）
-            isReplay = ReplayPlaybackDetector.IsPlayingReplay;
-            if (!isReplay) LastPlayedBeatmapKey = beatmapKey;
+            if (!IsReplay) LastPlayedBeatmapKey = beatmapKey;
             markerSet = MarkerStore.Instance.GetOrCreate(beatmapKey);
 
             // 別の譜面のマーカーが出たという報告があり、再現できていない。
-            // どの譜面で何個読み込んだかを残しておけば、次に起きたとき突き合わせられる
+            // 調べるときは DebugLogging を有効にして、どの譜面で何個読み込んだかを突き合わせる
             Plugin.LogDebug(
                 $"Markers loaded for {BeatmapMarkerKey.From(beatmapKey)}: " +
                 $"{markerSet.Count} marker(s), " +
@@ -85,9 +91,8 @@ namespace HazardTimer.Services
             // プレイ終了時にまとめて書き出す。プレイ中の I/O を避けるため
             if (changed) MarkerStore.Instance.Save();
 
-            // このプレイのリプレイが増えているので、索引を作り直させる。
-            // リプレイ再生では増えないので、フォルダの全走査をやり直す意味がない
-            if (!isReplay) Replay.ReplayFileIndex.Invalidate();
+            // このプレイのリプレイが増えているので、索引を作り直させる
+            Replay.ReplayFileIndex.Invalidate();
 
             markerSet = null;
             MarkersChanged = null;

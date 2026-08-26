@@ -40,11 +40,9 @@ namespace HazardTimer.Services
             // 自分のリプレイなら取り込み済みのものを二度数えることになり、
             // 他人のリプレイなら当たってもいない壁がマーカーとして残る。
             // 表示側（カウントダウン）はそのまま動かす
-            if (ReplayPlaybackDetector.IsPlayingReplay)
+            if (session.IsReplay)
             {
-                // 詳細ログではなく常に出す。記録が止まったことに気づける手がかりが
-                // 他に無く、判定を誤ったときは「急に記録されなくなった」としか見えない
-                Plugin.Log?.Info("Replay playback detected; recording is disabled for this session.");
+                Plugin.LogDebug("Replay playback detected; recording is disabled for this session.");
                 return;
             }
 

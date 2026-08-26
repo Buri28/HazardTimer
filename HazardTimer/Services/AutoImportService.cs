@@ -87,6 +87,11 @@ namespace HazardTimer.Services
             // BeatLeader の書き出しはリザルト前後なので、ゲームプレイ終了時点では間に合わない
             ReplayFileIndex.Invalidate();
 
+            // リプレイ再生の判定に使う MOD 側のメンバーを、ここで探させておく。
+            // 初回の解決はアセンブリを全走査するので、プレイ開始直後まで持ち越すと
+            // FPS 半減の判定に触れる。メニューでは結果を捨ててよく、値も常に false
+            _ = ReplayPlaybackDetector.IsPlayingReplay;
+
             SelectedBeatmapTracker.SelectionChanged += OnSelectionChanged;
             SelectedBeatmapTracker.Polled += OnPolled;
 
