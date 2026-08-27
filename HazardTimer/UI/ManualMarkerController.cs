@@ -184,7 +184,9 @@ namespace HazardTimer.UI
             }
         }
 
-        // 表示するかどうかは全譜面に効く。切り替えたら一覧の色も変わるので描き直す
+        // 表示するかどうかは全譜面に効く。切り替えたら一覧の色も変わるので描き直す。
+        // 出さない種別は近くのマーカーを降ろす資格を失う（BeatmapMarkerSet.DropOverlaps）ので、
+        // 判定もやり直す。やらないと、次に何か編集するまで古い判定のまま使われる
 
         [UIValue("show-miss-markers")]
         public bool ShowMissMarkers
@@ -193,6 +195,7 @@ namespace HazardTimer.UI
             set
             {
                 PluginConfig.Instance.ShowMissMarkers = value;
+                MarkerStore.Instance.RecomputeAll();
                 Refresh();
             }
         }
@@ -204,6 +207,7 @@ namespace HazardTimer.UI
             set
             {
                 PluginConfig.Instance.ShowBombMarkers = value;
+                MarkerStore.Instance.RecomputeAll();
                 Refresh();
             }
         }
@@ -215,6 +219,7 @@ namespace HazardTimer.UI
             set
             {
                 PluginConfig.Instance.ShowWallMarkers = value;
+                MarkerStore.Instance.RecomputeAll();
                 Refresh();
             }
         }
@@ -327,6 +332,18 @@ namespace HazardTimer.UI
             if (set == null) return;
 
             actionMessage = set.AllOff() ? "All markers off" : "Nothing to turn off";
+            Persist();
+            Refresh();
+        }
+
+        /// <summary>この譜面に付けた On / Off の指定を全部外し、自動選択に戻す。</summary>
+        [UIAction("all-auto")]
+        public void AllAuto()
+        {
+            var set = CurrentSet();
+            if (set == null) return;
+
+            actionMessage = set.ResetToAuto() ? "Back to auto" : "Nothing to reset";
             Persist();
             Refresh();
         }
@@ -661,16 +678,16 @@ namespace HazardTimer.UI
                 parts.Add("Imp");
             }
 
-            if (marker.State == MarkerState.On) parts.Add("On");
-            else if (marker.State == MarkerState.Off) parts.Add("Off");
-
-            // 色だけでは理由まで伝わらないので、設定で切られていることは字でも出す
-            if (marker.State != MarkerState.Off
-                && marker.IsActive
-                && !PluginConfig.Instance.IsShown(marker.Source))
-            {
-                parts.Add("Hidden");
-            }
+            // 出すのは指定（State）ではなく、実際にカウントダウンされるかどうか。
+            // 指定を出すと、指定なしで鳴っているものが無表示になり、
+            // 重なりに負けて鳴らないものが On と出る。一覧と実際が食い違うと、
+            // なぜその表示になったのかが誰にも分からなくなる
+            if (marker.State == MarkerState.Off) parts.Add("Off");
+            // 種別ごとの表示設定で切られている。色だけでは理由まで伝わらないので字でも出す
+            else if (!PluginConfig.Instance.IsShown(marker.Source)) parts.Add("Hidden");
+            // 同じ地点の別のマーカーが使われている
+            else if (!marker.IsActive) parts.Add("Dup");
+            else parts.Add("On");
 
             return string.Join(" ", parts);
         }

@@ -25,6 +25,27 @@ namespace HazardTimer.Markers
         /// </remarks>
         private const float SameSpotSeconds = 0.2f;
 
+        /// <summary>
+        /// <see cref="TurnOn"/> が重なりとみなす幅。
+        /// </summary>
+        /// <remarks>
+        /// 使う指定にしたマーカーは、直前のマーカーの到達時刻からカウントダウンを始める。
+        /// これより近いものを両方使うと、数字が 0 まで減った直後に跳ね上がって読めなくなる。
+        /// 危険地点のまとめ幅（<c>ClusterThresholdSeconds</c>）を使わないのは、
+        /// 押した 1 つのために数秒先まで消えるのが操作として分かりにくいため。
+        /// </remarks>
+        private const float OverlapSeconds = 0.5f;
+
+        /// <summary>
+        /// 手動マーカーが記録と同じ地点を指しているとみなす幅。
+        /// </summary>
+        /// <remarks>
+        /// 手動は分と秒でしか置けないので、実測との差はどうしても 1 秒近くまで開く。
+        /// <see cref="OverlapSeconds"/> と同じ幅で見ると、同じ壁を指しているのに
+        /// 別々の警告として並んでしまう。
+        /// </remarks>
+        private const float ManualOverlapSeconds = 1.0f;
+
         [JsonProperty("markers")]
         private readonly List<HazardMarker> markers = new List<HazardMarker>();
 
@@ -224,18 +245,21 @@ namespace HazardTimer.Markers
 
         /// <summary>
         /// そのマーカーを必ず使う指定にする。
-        /// 時刻が重なる他のマーカーは、押した時点で使わない指定に変える。
+        /// ほぼ同時刻に重なる他のマーカーだけ、押した時点で使わない指定に変える。
         /// </summary>
         /// <remarks>
         /// 重なりの解消をこの操作の中でやってしまうのは、押した結果が
         /// そのまま一覧に出るようにするため。判定の中で暗黙に潰すと、
         /// なぜその表示になったのかが利用者から見えない。
+        /// 黙らせる範囲を <see cref="OverlapSeconds"/> までに留めるのは、
+        /// 一覧に見えているものを 1 つ点けただけで数秒先まで消えるのが、
+        /// 操作として直感に反するため。近接した記録のまとめ（危険地点のグループ）は
+        /// 指定なしのマーカーに対する自動選択の話で、こことは別に働く。
         /// </remarks>
         public bool TurnOn(HazardMarker marker)
         {
             if (!markers.Contains(marker)) return false;
 
-            var threshold = PluginConfig.Instance.ClusterThresholdSeconds;
             foreach (var other in markers)
             {
                 if (ReferenceEquals(other, marker)) continue;
@@ -244,7 +268,7 @@ namespace HazardTimer.Markers
                 // フェイルは距離に関係なく 1 つしか使わない。壁と手動は時刻で判断する
                 var competes = marker.Source == MarkerSource.Fail
                     ? other.Source == MarkerSource.Fail
-                    : Math.Abs(other.SongTime - marker.SongTime) < threshold;
+                    : Math.Abs(other.SongTime - marker.SongTime) < OverlapSeconds;
 
                 if (!competes) continue;
 
@@ -262,29 +286,18 @@ namespace HazardTimer.Markers
         /// そのマーカーを使わない指定にする。消さずに残す。
         /// </summary>
         /// <remarks>
-        /// カウントダウンに使われていたものを外した場合は、同じ危険地点の残りも
-        /// まとめて使わない指定にする。そうしないと自動選択が次の候補を拾い上げ、
-        /// 「使わないようにしたのに別のものが点いた」という結果になる。
+        /// 押したものだけを変える。同じ危険地点の残りを巻き添えにすると、
+        /// 1 つ外しただけで数秒ぶんの記録がまとめて消え、戻すのに何度も押し直すことになる。
+        /// 外した結果として近くの候補が繰り上がって点くのは、
+        /// そこがまだ危険地点として残っていることを示すので、そのままにする。
+        /// まとめて消したいときは <see cref="AllOff"/> がある。
         /// </remarks>
         public bool TurnOff(HazardMarker marker)
         {
             if (!markers.Contains(marker)) return false;
 
-            var wasActive = marker.IsActive;
             marker.State = MarkerState.Off;
             marker.UserTouched = true;
-
-            if (wasActive)
-            {
-                foreach (var member in Competitors(marker))
-                {
-                    if (member.State != MarkerState.Auto) continue;
-
-                    member.State = MarkerState.Off;
-                    member.UserTouched = true;
-                }
-            }
-
             Normalize();
             return true;
         }
@@ -304,25 +317,49 @@ namespace HazardTimer.Markers
         }
 
         /// <summary>
-        /// 同じ表示枠を奪い合う相手（自分は含まない）。
+        /// 利用者が付けた On / Off の指定を全部落として、自動選択に戻す。
         /// </summary>
         /// <remarks>
-        /// <see cref="TurnOn"/> が押した時点で黙らせる相手と同じ範囲にする。
-        /// ここを種別で絞ると、壁を外したときに近くの手動マーカーが繰り上がって点く。
+        /// 一度 On が付くと、その種別では自動の繰り上げが止まる（<see cref="PromoteMostHit"/> は
+        /// 既に On があると何もしない）。後から本当の難所が別の場所に移っても、
+        /// 指定を1つずつ外して回らないと追従しない。その戻し口。
+        /// 単に <see cref="MarkerState.Auto"/> にせず取り込み時の既定へ戻すのは、
+        /// ミスを Auto にすると危険地点ごとに全部が立ち上がってしまうため。
         /// </remarks>
-        private IEnumerable<HazardMarker> Competitors(HazardMarker marker)
+        public bool ResetToAuto()
         {
-            if (marker.Source == MarkerSource.Fail)
+            // 利用者が触ったものだけを戻すのでは足りない。取り込みが自分で選んだ On は
+            // UserTouched が立たないので対象から漏れ、それが残ると下の PromoteMostHit が
+            // AnyOn で弾かれて何もしない。戻し口として働かせるには全部を既定へ戻す
+            var changed = false;
+            foreach (var marker in markers)
             {
-                return markers.Where(m => m.Source == MarkerSource.Fail
-                                          && !ReferenceEquals(m, marker));
+                var state = DefaultStateFor(marker.Source);
+                if (marker.State == state && !marker.UserTouched) continue;
+
+                marker.State = state;
+                marker.UserTouched = false;
+                changed = true;
             }
 
-            var threshold = PluginConfig.Instance.ClusterThresholdSeconds;
-            return markers.Where(m => !ReferenceEquals(m, marker)
-                                      && SharesSlot(marker, m)
-                                      && Math.Abs(m.SongTime - marker.SongTime) < threshold);
+            if (!changed) return false;
+
+            // ミスの既定は Off なので、戻しただけでは1つも残らない。
+            // 取り込みと同じ規則で選び直す
+            PromoteMostHit(MarkerSource.Miss);
+            Normalize();
+            return true;
         }
+
+        /// <summary>取り込みが付ける既定の指定。手を入れる前の状態。</summary>
+        private static MarkerState DefaultStateFor(MarkerSource source) => source switch
+        {
+            // 数が多いので、既定では候補として持つだけにする
+            MarkerSource.Miss => MarkerState.Off,
+            // 数が少なく、当たると立て直しが利かないので既定で使う
+            MarkerSource.Bomb => MarkerState.On,
+            _ => MarkerState.Auto,
+        };
 
         public bool Remove(HazardMarker marker)
         {
@@ -395,60 +432,151 @@ namespace HazardTimer.Markers
         /// 警告は最初の接触より前に出す必要があるため。</item>
         /// <item>フェイル … <b>最も遅い</b>ものを採る。到達点が一番奥のところが今の壁であり、
         /// 手前で落ちた記録は既に通過できているため。</item>
-        /// <item>手動 … 実際に記録された地点と重なるならそちらへ譲る。重ならなければ対象。</item>
+        /// <item>手動 … 使わない指定でなければ必ず対象。同じ地点を指す記録の方を降ろす。
+        /// 記録が無いところに利用者が後から置いたものなので、置いたのに消えるのでは
+        /// 何のために設定したのか分からない。ただし明示的に使う指定のある記録には譲る。</item>
         /// </list>
-        /// <see cref="MarkerState.On"/> の指定があればそれを使い、同じ枠の他は選ばない。
+        /// <see cref="MarkerState.On"/> の指定があるものは、同じ危険地点に何個あっても全部使う。
+        /// 自動の選択が働くのは、そのグループに指定が 1 つも無いときだけ。
+        /// フェイルだけは専用の 1 行しか無いので、指定が複数あっても先頭 1 つに絞る。
+        /// 最後に、種別をまたいだ重なりを <see cref="DropOverlaps"/> で落とす。
         /// </remarks>
         public void RecomputeActive()
         {
-            var threshold = PluginConfig.Instance.ClusterThresholdSeconds;
-
             foreach (var marker in markers) marker.IsActive = false;
 
-            // フェイルは距離に関係なく全部で 1 グループ
-            ActivateOne(markers.Where(m => m.Source == MarkerSource.Fail).ToList(), byLatest: true);
+            // フェイルは距離に関係なく全部で 1 グループ。専用の 1 行しかないので 1 つに絞る
+            Activate(markers.Where(m => m.Source == MarkerSource.Fail).ToList(),
+                     byLatest: true, keepEveryOn: false);
 
             // 壁とミスは同じ表示枠だが、危険地点のまとめ方は種別ごとに独立させる
             foreach (var source in new[] { MarkerSource.Wall, MarkerSource.Miss, MarkerSource.Bomb })
             {
-                foreach (var group in GroupsOf(source)) ActivateOne(group, byLatest: false);
+                foreach (var group in GroupsOf(source))
+                {
+                    Activate(group, byLatest: false, keepEveryOn: true);
+                }
             }
 
-            // 手動は最後に決める。実測や取り込みで同じ地点が記録されているなら、
-            // 手で置いた見当より実際の記録の方が確かなので譲る。
-            // 記録が消えていた頃に手当てとして置いたものが、記録の復活後も
-            // 二重に残り続けるのを防ぐ
+            // 手動は最後に決める。使わない指定でなければ必ず対象。
+            // 手動マーカーは記録が無いところに利用者が後から置いたもので、
+            // 置いたのに消えるのでは何のために設定したのか分からない
             foreach (var manual in markers.Where(m => m.Source == MarkerSource.Manual))
             {
                 if (manual.State == MarkerState.Off) continue;
-                if (manual.State == MarkerState.On)
+                manual.IsActive = true;
+            }
+
+            // 同じ地点を指している記録を降ろす。手動は分と秒でしか置けないので、
+            // 差が 1 秒未満なら同じ地点とみなす。
+            // 降ろすのは最も近い 1 つだけ。前後 1 秒にあるものを全部消すと、
+            // 手動 1 個が 2 秒幅を黙らせることになり、別々に警告できるものまで巻き込む
+            foreach (var manual in markers)
+            {
+                if (manual.Source != MarkerSource.Manual || !manual.IsActive) continue;
+
+                HazardMarker? nearest = null;
+                var shortest = ManualOverlapSeconds;
+
+                foreach (var other in markers)
                 {
-                    manual.IsActive = true;
+                    if (other.Source == MarkerSource.Manual) continue;
+                    // フェイルは専用の行なので手動とは競合しない
+                    if (other.Source == MarkerSource.Fail) continue;
+                    if (!other.IsActive) continue;
+                    // 利用者が明示的に点けた記録には譲る。手動も明示なら手動を採る。
+                    // ここで State を見ないと、指定なしの手動が On のボムを黙らせて
+                    // 危険の種類が読み取れなくなる（DropOverlaps の勝敗とも食い違う）
+                    if (other.State == MarkerState.On && manual.State != MarkerState.On) continue;
+
+                    var distance = Math.Abs(other.SongTime - manual.SongTime);
+                    if (distance >= shortest) continue;
+
+                    shortest = distance;
+                    nearest = other;
+                }
+
+                if (nearest != null) nearest.IsActive = false;
+            }
+
+            DropOverlaps();
+        }
+
+        /// <summary>
+        /// 表示枠を奪い合う対象のうち、直前と <see cref="OverlapSeconds"/> 未満で並ぶものを落とす。
+        /// </summary>
+        /// <remarks>
+        /// <see cref="TurnOn"/> も重なりを潰すが、それだけでは足りない。
+        /// <list type="bullet">
+        /// <item>時刻を動かす <see cref="Update"/> は <see cref="CanMoveTo"/>（0.2 秒）しか見ない。</item>
+        /// <item>取り込みは重なりを見ずに直接 On を書く（ボムは全部 On）。</item>
+        /// <item>危険地点のまとめ方は種別ごとに独立しているので、
+        /// ボムとミスのように別グループ同士が並ぶのは止められない。</item>
+        /// </list>
+        /// ここを通さないと、数字が 0 まで減った直後に跳ね上がって読めなくなる。
+        /// 残すのは使う指定のある方。どちらも同じなら早い方を残す。
+        /// 警告は最初の接触より前に出す必要があるため。
+        /// </remarks>
+        private void DropOverlaps()
+        {
+            HazardMarker? previous = null;
+            foreach (var marker in markers)
+            {
+                // フェイルは専用の行なので、この行の並びとは競合しない
+                if (marker.Source == MarkerSource.Fail) continue;
+                if (!marker.IsActive) continue;
+                // 出さない種別はそもそも並ばないので、隣を降ろす資格も無い。
+                // 見ないと「ボムの表示を切ったら近くの壁まで消えた」という結果になる
+                if (!PluginConfig.Instance.IsShown(marker.Source)) continue;
+
+                if (previous != null && marker.SongTime - previous.SongTime < OverlapSeconds)
+                {
+                    // 使う指定が競り勝つ。利用者が点けたものが、指定なしのものに
+                    // 押し負けて黙って消えるのでは筋が通らない
+                    if (marker.State == MarkerState.On && previous.State != MarkerState.On)
+                    {
+                        previous.IsActive = false;
+                        previous = marker;
+                    }
+                    else
+                    {
+                        marker.IsActive = false;
+                    }
                     continue;
                 }
 
-                manual.IsActive = !markers.Any(other => other.Source != MarkerSource.Manual
-                                                        && other.Source != MarkerSource.Fail
-                                                        && other.IsActive
-                                                        && Math.Abs(other.SongTime - manual.SongTime) < threshold);
+                previous = marker;
             }
         }
 
         /// <summary>
-        /// グループの中から 1 つだけを対象にする。
+        /// グループの中から対象を決める。
         /// </summary>
         /// <remarks>
-        /// 使う指定が複数あっても 1 つに絞る。取り込みと利用者の指定が同じ危険地点で
-        /// 重なることがあり、そのまま両方を対象にすると 1 つの地点に警告が 2 回出る。
+        /// 指定なしのものは 1 つに絞る。近接した記録は同じ危険地点なので、
+        /// 全部を対象にすると 1 つの地点に警告が何度も出る。
+        /// 使う指定は <paramref name="keepEveryOn"/> なら全部残す。
+        /// 一覧で点けたものが点かないと、なぜそうなったのかが利用者から見えない。
+        /// ここで残したものが近すぎて並ぶ場合は、<see cref="DropOverlaps"/> が後から落とす。
         /// </remarks>
-        private static void ActivateOne(List<HazardMarker> group, bool byLatest)
+        /// <param name="keepEveryOn">
+        /// true なら使う指定を全部対象にする。false なら先頭 1 つだけ。
+        /// </param>
+        private static void Activate(List<HazardMarker> group, bool byLatest, bool keepEveryOn)
         {
             if (group.Count == 0) return;
 
-            var forced = group.FirstOrDefault(m => m.State == MarkerState.On);
-            if (forced != null)
+            var forced = group.Where(m => m.State == MarkerState.On).ToList();
+            if (forced.Count > 0)
             {
-                forced.IsActive = true;
+                if (keepEveryOn)
+                {
+                    foreach (var marker in forced) marker.IsActive = true;
+                }
+                else
+                {
+                    forced[0].IsActive = true;
+                }
                 return;
             }
 

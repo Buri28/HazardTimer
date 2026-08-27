@@ -70,12 +70,16 @@
                   hover-hint='Add a new marker with these values.'/>
         </horizontal>
         <horizontal spacing='1'>
-          <button text='Turn On' on-click='turn-on' pref-width='22'
-                  hover-hint='Always count down to this marker. Markers at a nearby time are turned off.'/>
-          <button text='Turn Off' on-click='turn-off' pref-width='22'
-                  hover-hint='Stop using this marker without deleting it. Nothing else is turned on.'/>
-          <button text='All Off' on-click='all-off' pref-width='22'
+          <button text='Turn On' on-click='turn-on' pref-width='33'
+                  hover-hint='Always count down to this marker. Only markers at almost the same time are turned off.'/>
+          <button text='Turn Off' on-click='turn-off' pref-width='33'
+                  hover-hint='Stop using this marker without deleting it. Nothing else is changed.'/>
+        </horizontal>
+        <horizontal spacing='1'>
+          <button text='All Off' on-click='all-off' pref-width='33'
                   hover-hint='Turn off every marker for this beatmap without deleting them.'/>
+          <button text='All Auto' on-click='all-auto' pref-width='33'
+                  hover-hint='Drop every On / Off you set here and go back to automatic selection.'/>
         </horizontal>
       </vertical>
 
@@ -100,7 +104,7 @@
 
       <slider-setting
         text='Merge Interval'
-        hover-hint='Records closer together than this are treated as one spot, and only one of them counts down.'
+        hover-hint='Records closer together than this are treated as one spot. Only one is picked automatically; markers you turn on are all kept.'
         value='cluster-threshold'
         min='0.5' max='15' increment='0.5'
         formatter='FormatSeconds'
