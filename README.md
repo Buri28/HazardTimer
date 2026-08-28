@@ -1,7 +1,5 @@
 # HazardTimer
 
-> 試作段階 現時点でリリースはありません
-
 壁に衝突した地点やFAILした地点などの**危険地帯までの秒数**をカウントダウン表示するMODです。  
 
 しゃがみ壁は、気付いてから反応しても間に合わないことがあります。  
@@ -68,7 +66,7 @@
 
 マーカーの確認・編集は、曲選択画面の左パネル **Mods タブ → HazardTimer** で行います。
 
-<img width="50%" height="50%" alt="image" src="https://github.com/user-attachments/assets/72c2a06a-cffa-4feb-a91c-f9e64677e1c2" />
+<img width="50%" height="50%" alt="image" src="https://github.com/user-attachments/assets/2f7d354d-940f-49c2-8392-455b147b47f1" />
 
 左の一覧に、選択中の譜面のマーカーが時刻順に並びます。
 各行には種別・回数・状態が出ます（`MISS x2.3 On` など。回数はミスなら1プレイあたりの平均個数、
